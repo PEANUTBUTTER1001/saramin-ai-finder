@@ -6,10 +6,10 @@ plugins {
 }
 
 android {
-    namespace = "com.peanutbutter1001.saramcrawler"
+    namespace = "com.peanutbutter1001.saramin_ai_finder"
 
     defaultConfig {
-        applicationId = "com.peanutbutter1001.saramcrawler"
+        applicationId = "com.peanutbutter1001.saramin_ai_finder"
         versionCode = 1
         versionName = "1.0"
     }
