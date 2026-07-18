@@ -61,7 +61,7 @@ fun StatsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "관심 스택 통계",
+                        text = "기술 스택 통계",
                         color = Color.White,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
@@ -110,7 +110,11 @@ fun StatsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Overview Summary Card
@@ -144,12 +148,6 @@ fun StatsScreen(
                             fontWeight = FontWeight.Black,
                             color = NeonCyan
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "상세히 읽어본 AI/개발 채용 정보 수",
-                            fontSize = 12.sp,
-                            color = Color.Gray
-                        )
                     }
                 }
 
@@ -157,7 +155,7 @@ fun StatsScreen(
 
                 // Chart Section
                 Text(
-                    text = "요구 기술 스택 TOP 8",
+                    text = "기술 스택 TOP 8",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,

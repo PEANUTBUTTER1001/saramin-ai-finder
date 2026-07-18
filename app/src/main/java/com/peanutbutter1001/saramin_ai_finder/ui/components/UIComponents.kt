@@ -38,7 +38,7 @@ fun JobCard(job: JobItem, onClick: () -> Unit) {
             )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -54,8 +54,7 @@ fun JobCard(job: JobItem, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                
+
                 // Detailed Location parsing from condition
                 val detailedLocation = job.condition.split(",")
                     .firstOrNull { it.contains("서울 ") }?.trim()
@@ -96,7 +95,7 @@ fun JobCard(job: JobItem, onClick: () -> Unit) {
                     text = job.sector,
                     fontSize = 12.sp,
                     color = Color.LightGray,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(end = 8.dp)
                 )
