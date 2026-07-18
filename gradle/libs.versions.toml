@@ -1,0 +1,137 @@
+[versions]
+# Plugins
+agp = "9.2.1"
+kotlin = "2.4.0"
+
+# KSP
+ksp = "2.3.9"
+
+# Hilt
+hilt = "2.60.1"
+hilt-androidx = "1.4.0"
+
+# AndroidX & Core
+coreKtx = "1.19.0"
+lifecycleRuntimeKtx = "2.11.0"
+appcompat = "1.7.1"
+splashscreen = "1.2.0"
+jsoup = "1.18.1"
+
+# Compose
+activityCompose = "1.13.0"
+composeBom = "2026.06.01"
+
+# Navigation 3 (Nav3)
+navigation3 = "1.1.4"
+lifecycleViewmodelNav3 = "2.11.0"  # lifecycle 버전(2.11.0)에 정렬됨
+
+# Serialization (Type-safe 라우트용)
+kotlinxSerialization = "1.11.0"
+
+# UI & Material
+material = "1.14.0"
+
+# Testing
+junit = "4.13.2"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+
+[libraries]
+# Jsoup
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+
+# AndroidX
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "splashscreen" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+
+# Hilt
+hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
+hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt" }
+hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hilt-androidx" }
+hilt-lifecycle-viewmodel-compose = { module = "androidx.hilt:hilt-lifecycle-viewmodel-compose", version.ref = "hilt-androidx" }
+
+# Compose (BOM)
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
+
+# Navigation 3 (Type-safe)
+androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "navigation3" }
+androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
+androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "lifecycleViewmodelNav3" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+
+# Material
+material = { module = "com.google.android.material:material", version.ref = "material" }
+
+# Testing
+test-junit = { module = "junit:junit", version.ref = "junit" }
+test-compose-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+test-compose-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+test-androidx-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espressoCore" }
+test-androidx-junit = { module = "androidx.test.ext:junit", version.ref = "junitVersion" }
+
+# build-logic
+android-gradlePlugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
+kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+ksp-gradlePlugin = { module = "com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
+hilt-gradlePlugin = { module = "com.google.dagger:hilt-android-gradle-plugin", version.ref = "hilt" }
+kotlin-serialization-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-serialization", version.ref = "kotlin" }
+
+[bundles]
+# 안드로이드 기본 UI 및 Core
+android-core = [
+    "androidx-core-ktx",
+    "androidx-appcompat",
+    "material"
+]
+
+# Compose 핵심 UI 구성 요소
+compose-core = [
+    "androidx-activity-compose",
+    "androidx-compose-ui",
+    "androidx-compose-ui-graphics",
+    "androidx-compose-ui-tooling-preview",
+    "androidx-compose-material3"
+]
+
+# Navigation 3
+navigation3 = [
+    "androidx-navigation3-runtime",
+    "androidx-navigation3-ui",
+    "androidx-lifecycle-viewmodel-navigation3"
+]
+
+# 로컬 단위 테스트 (testImplementation 전용)
+unit-test = [
+    "test-junit"
+]
+
+# 안드로이드 UI 테스트 (androidTestImplementation 전용)
+android-test = [
+    "test-androidx-junit",
+    "test-androidx-espresso",
+    "test-compose-junit4"
+]
+
+# Compose 디버깅 용도 (debugImplementation 전용)
+compose-debug = [
+    "androidx-compose-ui-tooling",
+    "test-compose-manifest"
+]
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+android-library = { id = "com.android.library", version.ref = "agp" }
