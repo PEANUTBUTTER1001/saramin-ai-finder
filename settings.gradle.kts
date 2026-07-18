@@ -23,5 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "saramcrawler"
+rootProject.name = "saramin-ai-finder"
 include(":app")
