@@ -74,10 +74,9 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .systemBarsPadding()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -138,7 +137,7 @@ fun HomeScreen(
                 BadgeTag(text = "4년제대졸/무관", containerColor = NeonOrange.copy(alpha = 0.2f), textColor = NeonOrange)
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             // Search Bar & Search Button Row
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -12,16 +12,20 @@ import com.peanutbutter1001.saramin_ai_finder.navigation.AppNavHost
 import com.peanutbutter1001.saramin_ai_finder.ui.theme.SaraminAiFinderTheme
 import dagger.hilt.android.AndroidEntryPoint
 
+import androidx.activity.SystemBarStyle
+import android.graphics.Color
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+        )
         setContent {
             SaraminAiFinderTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    AppNavHost(modifier = Modifier.padding(innerPadding))
-                }
+                AppNavHost(modifier = Modifier.fillMaxSize())
             }
         }
     }
