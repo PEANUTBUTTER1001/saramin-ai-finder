@@ -1,0 +1,1 @@
+"""Saramin Finder desktop application."""
