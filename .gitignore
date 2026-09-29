@@ -215,3 +215,13 @@ fabric.properties
 /captures
 .cxx
 .omc
+
+### Desktop Python ###
+desktop/.deps/
+desktop/.cache/
+desktop/dist/
+desktop/.pytest-tmp/
+desktop/.pytest_cache/
+desktop/.smoke/
+**/__pycache__/
+*.pyc
