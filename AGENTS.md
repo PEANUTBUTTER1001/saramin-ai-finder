@@ -11,6 +11,7 @@ Source of Truth: `README.md`, `desktop/README.md`, `desktop/pyproject.toml`, `se
 - PC 화면 생성: `python desktop/tools/build_ui.py` — 프로토타입 레이아웃 변경을 반영할 때만 사용한다.
 - PC 배포물 생성: `python desktop/packaging/build_portable.py` — Windows x64의 Python 3.12 개발 환경에서 실행한다.
 - PC 실행: `desktop/dist/SaraminFinder/실행.bat` — 배포물 생성 후 실행한다.
+- PC 바로가기 생성: `desktop/dist/SaraminFinder/바탕화면 바로가기 생성.bat` — 현재 배포 폴더를 대상으로 바탕화면 바로가기를 생성·갱신한다. 배포 폴더 이동 후 다시 실행한다.
 
 ## 2. 구조 지도
 역할은 폴더 이름이 아니라 코드가 하는 일로 판단한다. Android 앱 코드는 `:app` 단일 모듈이다. PC 앱은 `desktop/`의 별도 Python 프로젝트다.
