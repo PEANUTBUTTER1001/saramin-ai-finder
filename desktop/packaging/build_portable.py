@@ -55,9 +55,12 @@ def main():
     shutil.copytree(DESKTOP / "src" / "saramin_finder", app / "saramin_finder",
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copytree(DESKTOP / "font", OUTPUT / "font")
-    shutil.copy2(DESKTOP / "packaging" / "실행.bat", OUTPUT / "실행.bat")
+    for filename in ("실행.bat", "바탕화면 바로가기 생성.bat", "create_shortcut.ps1"):
+        shutil.copy2(DESKTOP / "packaging" / filename, OUTPUT / filename)
     (OUTPUT / "README.txt").write_text(
         "사람인 공고 관리 PC 앱\n\n실행.bat를 더블클릭하세요. 실행 중 CMD 창은 남지 않습니다.\n"
+        "바탕화면 바로가기 생성.bat를 더블클릭하면 바로가기를 생성하거나 갱신합니다.\n"
+        "배포 폴더를 이동한 뒤에는 바로가기 생성 도구를 다시 실행하세요.\n"
         "데이터와 로그: %LOCALAPPDATA%\\SaraminAIFinder\\\n"
         "Python 설치 및 pip 실행은 필요하지 않습니다.\n", encoding="utf-8")
     print(f"Portable app ready: {OUTPUT}", flush=True)
