@@ -1,7 +1,8 @@
 """Build a no-installer Windows folder with 실행.bat and private Python.
 
-Run on a Windows x64 developer machine with Python 3.12 and internet access.
-The target machine needs no Python or pip installation.
+Run on Windows x64 with any Python 3.9+ that has pip, and internet access.
+Packages are fetched as Python 3.12 win_amd64 wheels to match the bundled
+runtime. The target machine needs no Python or pip installation.
 """
 
 from __future__ import annotations
@@ -26,17 +27,21 @@ PACKAGES = ("PySide6==6.11.2", "requests==2.34.2", "beautifulsoup4==4.14.3")
 
 
 def main():
-    if sys.platform != "win32" or platform.architecture()[0] != "64bit":
+    if sys.platform != "win32" or platform.machine().upper() not in {"AMD64", "X86_64"}:
         raise RuntimeError("Windows 64비트에서 빌드해 주세요.")
-    if sys.version_info[:2] != (3, 12):
-        raise RuntimeError("Python 3.12 개발 환경이 필요합니다.")
     DIST_ROOT.mkdir(parents=True, exist_ok=True)
     CACHE.mkdir(parents=True, exist_ok=True)
     # Never remove a caller-provided or escaped filesystem path.
     if OUTPUT.resolve().parent != DIST_ROOT.resolve() or OUTPUT.name != "SaraminFinder":
         raise RuntimeError("배포 출력 경로가 예상 위치가 아닙니다.")
+    shutil.rmtree(DIST_ROOT / "SaraminFinder.old", ignore_errors=True)
     if OUTPUT.exists():
-        shutil.rmtree(OUTPUT)
+        try:
+            # A running app locks its DLLs; renaming fails before anything is deleted.
+            stale = OUTPUT.rename(DIST_ROOT / "SaraminFinder.old")
+        except OSError:
+            raise RuntimeError("사람인 공고 관리 앱을 종료한 뒤 다시 실행해 주세요.") from None
+        shutil.rmtree(stale)
     runtime = OUTPUT / "runtime"
     vendor = OUTPUT / "vendor"
     app = OUTPUT / "app"
@@ -51,7 +56,9 @@ def main():
     pth.write_text("python312.zip\n.\n..\\app\n..\\vendor\nimport site\n", encoding="utf-8")
     print("Installing pinned packages into the portable folder...", flush=True)
     subprocess.run([sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
-                    "--no-warn-script-location", "--target", str(vendor), *PACKAGES], check=True)
+                    "--no-warn-script-location", "--target", str(vendor),
+                    "--platform", "win_amd64", "--python-version", "3.12",
+                    "--implementation", "cp", "--only-binary=:all:", *PACKAGES], check=True)
     shutil.copytree(DESKTOP / "src" / "saramin_finder", app / "saramin_finder",
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copytree(DESKTOP / "font", OUTPUT / "font")
@@ -64,4 +71,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as exc:
+        sys.exit(str(exc))

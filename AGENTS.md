@@ -9,8 +9,9 @@ Source of Truth: `README.md`, `desktop/README.md`, `desktop/pyproject.toml`, `se
 - 정적 검사: `./gradlew.bat :app:lintDebug`
 - PC 테스트: `python -m pytest -q --basetemp desktop/.pytest-tmp desktop/tests`
 - PC 화면 생성: `python desktop/tools/build_ui.py` — 프로토타입 레이아웃 변경을 반영할 때만 사용한다.
-- PC 배포물 생성: `python desktop/packaging/build_portable.py` — Windows x64의 Python 3.12 개발 환경에서 실행한다.
-- PC 실행: `desktop/dist/SaraminFinder/실행.bat` — 배포물 생성 후 실행한다.
+- PC 설치·실행: 루트 `설치.bat` — 배포물 생성 → 바탕화면 바로가기 생성 → 실행.
+- PC 배포물 생성: `python desktop/packaging/build_portable.py` — Windows x64, Python 3.9 이상에서 실행한다.
+- PC 실행: `desktop/dist/SaraminFinder/실행.bat` 또는 바탕화면 바로가기 — 배포물 생성 후 실행한다.
 
 ## 2. 구조 지도
 역할은 폴더 이름이 아니라 코드가 하는 일로 판단한다. Android 앱 코드는 `:app` 단일 모듈이다. PC 앱은 `desktop/`의 별도 Python 프로젝트다.
@@ -30,7 +31,7 @@ Source of Truth: `README.md`, `desktop/README.md`, `desktop/pyproject.toml`, `se
 | PC 도메인 | `desktop/src/saramin_finder/domain/` | 검색 프로필·공고·섹션 모델, 순수 검증·추출·키워드 규칙 |
 | PC 인프라 | `desktop/src/saramin_finder/infrastructure/` | 사람인 HTTP/파싱, SQLite, 시각·파일 접근 |
 | PC 조립 | `desktop/src/saramin_finder/main.py` | 저장소·화면·알림 연결 |
-| PC 테스트·배포 | `desktop/tests/`, `desktop/packaging/` | Python 테스트와 설치 없는 `.bat` 배포 |
+| PC 테스트·배포 | `desktop/tests/`, `desktop/packaging/`, `설치.bat` | Python 테스트와 설치 없는 `.bat` 배포 |
 
 ## 3. 의존 규칙
 규칙은 §2의 역할을 기준으로 적용한다. 현재 단일 모듈에 역할 간 Gradle 경계 검사는 없다.
