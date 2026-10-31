@@ -1,22 +1,27 @@
 # 사람인 공고 관리 PC 앱
 
-## 실행
+## 설치·실행
 
-`desktop/dist/SaraminFinder/실행.bat`를 더블클릭합니다. 배포 폴더에는 Python과 필요한 라이브러리가 포함되므로 대상 PC에 Python을 설치할 필요가 없습니다. `.bat` 시작 순간에는 콘솔 창이 잠깐 보일 수 있지만 GUI 사용 중에는 남지 않습니다. 설치 프로그램은 사용하지 않습니다.
+1. 저장소를 내려받습니다: `git clone` 후 저장소 폴더를 엽니다.
+2. 루트의 `설치.bat`를 더블클릭합니다. 배포 폴더를 만들고, 바탕화면에 **사람인 공고 관리** 바로가기를 만든 뒤 앱을 실행합니다. 처음에는 Python 실행 환경과 라이브러리를 내려받아 몇 분 걸립니다.
+3. 이후에는 바탕화면 바로가기를 더블클릭합니다.
+
+준비 단계에는 Windows 10 1803 이상(64비트)과 인터넷이 필요합니다. pip가 포함된 Python 3.9 이상(`py -3` 또는 `python`)이 있으면 그것으로 준비하고, 없으면 공식 Python 3.12.10 내장용 실행 환경과 pip 26.2.2 zipapp을 `desktop/.cache/python-boot/`에 받아 사용합니다. 시스템 설치·PATH·레지스트리 변경이나 관리자 권한은 없으며 Windows 기본 `curl`·`tar`로 내려받습니다. 앱은 배포 폴더에 포함된 Python 3.12로 실행되므로 준비가 끝난 폴더는 Python 없는 PC로 복사해도 `실행.bat`로 실행됩니다. 설치 프로그램은 사용하지 않습니다.
+
+업데이트: 앱을 종료하고 `git pull` 후 `설치.bat`를 다시 실행합니다. 앱이 실행 중이면 배포 폴더를 지우지 않고 종료를 안내합니다. 공고 DB는 배포 폴더 밖에 있어 유지됩니다.
 
 첫 실행 시 `%LOCALAPPDATA%\SaraminAIFinder\jobs.sqlite3`가 생성됩니다. 수집한 공고·자격요건·우대사항·감시 조건·알림은 여기에 보관됩니다. 오류 로그는 같은 위치의 `desktop.log`입니다.
 
 ## 개발·배포물 생성
 
-Windows 64비트 및 Python 3.12 개발 환경에서 다음을 실행합니다.
+개발·테스트는 Windows 64비트 및 Python 3.12 환경에서 실행합니다.
 
 ```powershell
 python -m pip install -e "desktop[test]"
 python -m pytest -q --basetemp desktop/.pytest-tmp desktop/tests
-python desktop/packaging/build_portable.py
 ```
 
-마지막 명령은 공식 Python 3.12.10 내장용 실행 환경과 고정 버전 의존성을 받아 `desktop/dist/SaraminFinder/`를 만듭니다. 대상 PC에서는 다운로드나 `pip`가 필요하지 않습니다.
+배포물만 만들 때는 `python desktop/packaging/build_portable.py`를 실행합니다(`설치.bat`의 1단계와 같음). 공식 Python 3.12.10 내장용 실행 환경과 고정 버전 의존성의 Python 3.12 win_amd64 휠을 받아 `desktop/dist/SaraminFinder/`를 만들므로, 빌드하는 Python은 3.9 이상이면 버전이 달라도 됩니다. 대상 PC에서는 다운로드나 `pip`가 필요하지 않습니다.
 
 프로토타입 화면을 다시 동기화할 때만 `python desktop/tools/build_ui.py`를 실행합니다. 이 스크립트는 현재 프로토타입의 HTML/CSS를 가져오고 샘플 JavaScript 대신 실제 `app.js`를 연결합니다.
 

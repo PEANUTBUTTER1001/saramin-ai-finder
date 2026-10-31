@@ -1,0 +1,2 @@
+# Windows batch files must keep CRLF regardless of the cloner's autocrlf setting.
+*.bat text eol=crlf
