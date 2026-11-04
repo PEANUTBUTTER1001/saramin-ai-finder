@@ -2,6 +2,8 @@ let bridge;
 let activeView = 'overview';
 let explorePage = 1;
 let analysisPage = 1;
+let favoritePage = 1;
+const pendingFavorites = new Set();
 let groupType = 'sector';
 let groupValue = '';
 let editingWatchId = null;
@@ -47,12 +49,13 @@ function go(view) {
     active ? el.setAttribute('aria-current', 'page') : el.removeAttribute('aria-current');
   });
   $('crumbName').textContent = {overview:'대시보드',explore:'공고 데이터',analysis:'요건 분석',
-    watch:'공고 감시',crawl:'수집 작업',settings:'설정',fields:'저장 항목'}[view];
+    favorites:'즐겨찾기',watch:'공고 감시',alerts:'새 공고',crawl:'수집 작업',settings:'설정',fields:'저장 항목'}[view];
   window.scrollTo({top:0,behavior:'smooth'});
   if (view === 'overview') renderOverview();
   if (view === 'explore') renderExplore();
+  if (view === 'favorites') renderFavorites();
   if (view === 'analysis') renderAnalysis();
-  if (view === 'watch') renderWatches();
+  if (view === 'watch' || view === 'alerts') renderWatches();
   if (view === 'crawl') renderRuns();
   if (view === 'fields') renderFields();
 }
@@ -63,6 +66,81 @@ function statusTag(status) {
   const label = {complete:'완료',image_only:'이미지 공고',failed:'상세 실패',pending:'상세 대기'}[status] || status;
   const cls = status === 'complete' ? 'good' : status === 'image_only' ? 'warn' : 'bad';
   return `<span class="tag ${cls}">${esc(label)}</span>`;
+}
+function applySidebarCollapsed(collapsed) {
+  $('sidebar').classList.toggle('collapsed', collapsed);
+  const label = collapsed ? '사이드바 확대' : '사이드바 축소';
+  const button = $('toggleSidebar');
+  button.setAttribute('aria-expanded', String(!collapsed));
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.querySelector('svg').style.transform = collapsed ? 'rotate(180deg)' : '';
+}
+function applyTheme(theme) {
+  document.body.dataset.theme = theme;
+  $('themeSelect').value = theme;
+  const dark = theme === 'dark', label = dark ? '라이트 모드' : '다크 모드';
+  $('toggleTheme').setAttribute('aria-checked', String(dark));
+  $('toggleTheme').title = `${label}로 전환`;
+  $('themeLabel').textContent = dark ? '다크 모드' : '라이트 모드';
+}
+async function saveTheme(theme) {
+  $('toggleTheme').disabled = true; $('themeSelect').disabled = true;
+  try {
+    const saved = await safe('set_theme', {theme});
+    applyTheme(saved ? saved.theme : document.body.dataset.theme);
+  } finally { $('toggleTheme').disabled = false; $('themeSelect').disabled = false; }
+}
+function favoriteButton(id, favorite) {
+  const label = favorite ? '즐겨찾기 해제' : '즐겨찾기 추가';
+  return `<button class="favorite-button" type="button" data-favorite="${esc(id)}" aria-pressed="${!!favorite}"
+    aria-label="${label}" title="${label}"><svg aria-hidden="true"><use href="#i-star"/></svg></button>`;
+}
+async function toggleFavorite(button) {
+  const id = button.dataset.favorite;
+  if (pendingFavorites.has(id)) return;
+  pendingFavorites.add(id);
+  const buttons = Array.from(document.querySelectorAll('[data-favorite]')).filter(el => el.dataset.favorite === id);
+  buttons.forEach(el => el.disabled = true);
+  try {
+    const result = await safe('set_favorite', {id,favorite:button.getAttribute('aria-pressed') !== 'true'});
+    if (!result) return;
+    buttons.forEach(el => {
+      const label = result.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가';
+      el.setAttribute('aria-pressed', String(result.favorite));
+      el.setAttribute('aria-label', label); el.title = label;
+    });
+    if (activeView === 'favorites') await renderFavorites();
+  } finally {
+    pendingFavorites.delete(id);
+    buttons.forEach(el => el.disabled = false);
+  }
+}
+function collectionStamp(value, label = '') {
+  return value ? `<span class="collection-date">${esc(label)}${esc(shortStamp(value))}</span><span class="collection-time">${esc(new Date(value).toLocaleTimeString('ko-KR'))}</span>` : '—';
+}
+function postingRows(items, offset) {
+  return items.map((item, index) => `<tr><td class="favorite-cell">${favoriteButton(item.rec_idx, item.favorite)}</td>
+    <td class="posting-number">${offset + index + 1}</td>
+    <td><span class="job-name">${esc(item.title)}</span><span class="company-name">${esc(item.company)} · ID ${esc(item.rec_idx)}</span></td>
+    <td>${esc(item.sector)}</td><td><span class="date-cell">${esc(item.career)}</span><br><span class="company-name">${esc(item.education)}</span></td>
+    <td class="date-cell">${esc(item.posted_date || '미확인')}${!item.posted_date && item.updated_date ? `<br><span class="company-name">수정 ${esc(item.updated_date)}</span>` : ''}</td>
+    <td class="date-cell">${esc(item.deadline_date || item.deadline || '미확인')}<br><span class="company-name">${esc(dday(item.deadline_date))}</span></td>
+    <td class="collection-cell">${collectionStamp(item.last_seen_at)}${item.last_watch_collected_at ? `<small>${collectionStamp(item.last_watch_collected_at, '감시 수집 ')}</small>` : ''}</td>
+    <td><button class="table-action" data-open-url="${esc(item.url)}">원본 링크 ↗</button></td>
+    <td><button class="table-action" data-detail="${esc(item.rec_idx)}">상세 →</button></td></tr>`).join('');
+}
+async function renderFavorites() {
+  const result = await safe('postings', {filters:{favorite:true},page:favoritePage,sort:$('favoriteSort').value});
+  if (!result) return;
+  const lastPage = Math.max(1, Math.ceil(result.total / result.per_page));
+  if (favoritePage > lastPage) { favoritePage = lastPage; return renderFavorites(); }
+  $('favoriteCount').textContent = result.total;
+  $('favoriteRows').innerHTML = postingRows(result.items, (result.page - 1) * result.per_page);
+  $('favoriteEmpty').hidden = result.total > 0;
+  $('favoriteSummary').textContent = `${result.total}건 · ${favoritePage}페이지`;
+  $('favoritePrev').disabled = favoritePage <= 1;
+  $('favoriteNext').disabled = favoritePage * result.per_page >= result.total;
 }
 async function renderOverview() {
   const [stats, recent] = await Promise.all([safe('dashboard'), safe('postings', {page:1})]);
@@ -82,7 +160,7 @@ async function renderOverview() {
   $('recentRows').innerHTML = recent.items.slice(0, 5).map(item => `<tr>
     <td><span class="job-name">${esc(item.title)}</span><span class="company-name">${esc(item.company)}</span></td>
     <td>${esc(item.sector)}</td><td>${esc(item.career)}</td><td>${techTags(item.tech)}</td>
-    <td>${shortStamp(item.last_seen_at)}</td><td><button class="table-action" data-detail="${esc(item.rec_idx)}">열기 →</button></td></tr>`).join('');
+    <td class="date-cell">${shortStamp(item.last_seen_at)}</td><td><button class="table-action" data-detail="${esc(item.rec_idx)}">열기 →</button></td></tr>`).join('');
 }
 async function fillFacets() {
   const facets = await safe('facets'); if (!facets) return;
@@ -139,13 +217,7 @@ async function renderExplore() {
   if (!result || !groups) return;
   $('resultCount').textContent = result.total;
   $('resultCaption').textContent = groupValue ? `“${groupValue}” 분류 적용 중` : '저장된 공고를 조건별로 조회';
-  $('exploreRows').innerHTML = result.items.map(item => `<tr><td><span class="job-name">${esc(item.title)}</span>
-    <span class="company-name">${esc(item.company)} · ID ${esc(item.rec_idx)}</span></td>
-    <td>${esc(item.sector)}</td><td>${esc(item.career)}<br><span class="company-name">${esc(item.education)}</span></td>
-    <td>${esc(item.posted_date || '미확인')}${!item.posted_date && item.updated_date ? `<br><span class="company-name">수정 ${esc(item.updated_date)}</span>` : ''}</td>
-    <td>${esc(item.deadline_date || item.deadline || '미확인')}<br><span class="company-name">${esc(dday(item.deadline_date))}</span></td>
-    <td><button class="table-action" data-open-url="${esc(item.url)}">원본 링크 ↗</button></td>
-    <td><button class="table-action" data-detail="${esc(item.rec_idx)}">상세 →</button></td></tr>`).join('');
+  $('exploreRows').innerHTML = postingRows(result.items, (result.page - 1) * result.per_page);
   $('exploreEmpty').hidden = result.total > 0;
   $('visibleSummary').textContent = `${result.total}건 · ${explorePage}페이지`;
   $('groupItems').innerHTML = groups.map(item => `<button class="group-item ${item.value === groupValue ? 'selected' : ''}"
@@ -257,14 +329,12 @@ async function renderProfile() {
   regionOptions = options;
   fillCriteriaForm('profile', profile, options);
   fillCriteriaForm('crawl', profile, options);
-  $('profileSummary').textContent = `적용 조건 · ${profileLabels(profile).join(' · ')}. 감시 검색어와 간격은 아래에서 각각 수정할 수 있습니다.`;
 }
 async function saveProfile(event) {
   event.preventDefault();
   $('profileError').textContent = '';
   try {
-    const profile = await call('save_profile', criteriaFromForm('profile'));
-    $('profileSummary').textContent = `적용 조건 · ${profileLabels(profile).join(' · ')}. 감시 검색어와 간격은 아래에서 각각 수정할 수 있습니다.`;
+    await call('save_profile', criteriaFromForm('profile'));
     await Promise.all([renderWatches(),renderRuns()]);
     toast('검색 조건을 저장했습니다. 다음 감시에서 새 기준 목록을 만듭니다.');
   } catch (error) { $('profileError').textContent = error.message; }
@@ -287,9 +357,9 @@ async function renderWatches() {
     <button class="btn small" data-watch-action="edit" data-watch-id="${rule.id}">수정</button>
     <button class="btn small danger" data-watch-action="remove" data-watch-id="${rule.id}">삭제</button></div></article>`).join('')
     : '<div class="watch-empty"><strong>설정된 감시가 없습니다</strong>검색어와 간격을 입력해 추가하세요.</div>';
-  $('alertList').innerHTML = alerts.length ? alerts.map(alert => `<div class="alert-item"><div class="alert-copy">
+  $('alertList').innerHTML = alerts.length ? alerts.map(alert => `<div class="alert-item">${favoriteButton(alert.posting_id, alert.favorite)}<div class="alert-copy">
     <strong>${esc(alert.title)}</strong><p>${esc(alert.company)} · 감시 검색어 “${esc(alert.query_snapshot)}”</p>
-    <time>${esc(stamp(alert.created_at))}</time></div><div class="alert-actions">
+    <time>감시 수집 ${esc(alert.collected_at ? stamp(alert.collected_at) : '미기록')}<br>알림 생성 ${esc(stamp(alert.created_at))}</time></div><div class="alert-actions">
     <button class="table-action" type="button" data-detail="${esc(alert.posting_id)}">상세 →</button>
     <button class="table-action" type="button" data-open-url="${esc(alert.url)}">브라우저에서 열기 →</button></div></div>`).join('')
     : '<div class="watch-empty"><strong>새 공고 알림이 없습니다</strong>첫 성공 확인은 기준 목록을 만듭니다.</div>';
@@ -313,6 +383,8 @@ async function renderFields() {
     ['분석','섹션별 기술 키워드','섹션별 서로 다른 공고 수','section_keywords'],
     ['출처','검색어 · 적용 조건 · 시각','수집할 때의 조건 스냅샷','crawl_runs'],
     ['감시','검색어별 주기 · 기준 목록','신규 공고 구별','watch_rules · watch_seen'],
+    ['감시','최초 · 최근 감시 수집 시각','수동 수집 시각 및 공고등록일과 별도 기록','first_watch_collected_at · last_watch_collected_at'],
+    ['보관','즐겨찾기','별표로 선택한 공고만 조회','favorite'],
     ['상태','상세·섹션 추출 상태','이미지/실패/제목 없음 구분','detail_status · section_status'],
   ];
   const path = await safe('data_path');
@@ -328,7 +400,9 @@ async function openDetail(id) {
   const cells = [['직무 분야',item.sector],['경력 / 학력',`${item.career} / ${item.education}`],
     ['공고등록일',item.posted_date || '미확인'],['최종 수정일',item.updated_date || '미확인'],
     ['채용마감일',item.deadline_date ? `${item.deadline_date} · ${dday(item.deadline_date)}` : item.deadline || '미확인'],
-    ['검색어',item.queries.join(', ')],['최근 확인',stamp(item.last_seen_at)],
+    ['검색어',item.queries.join(', ')],['최근 수집시각',stamp(item.last_seen_at)],
+    ['최초 감시 수집',item.first_watch_collected_at ? stamp(item.first_watch_collected_at) : '미기록'],
+    ['최근 감시 수집',item.last_watch_collected_at ? stamp(item.last_watch_collected_at) : '미기록'],
     ['상세 상태',item.detail_status]];
   const section = (kind,label) => { const value = item.sections[kind] || {text:'',status:'missing'};
     return `<div class="detail-section"><h3>${label} · ${esc(value.status)}</h3><p class="text-panel">${esc(value.text || '추출된 문장이 없습니다.')}</p>
@@ -405,10 +479,12 @@ function handleEvent(raw) {
     $('windowAlert').classList.add('show');
     setTimeout(() => $('windowAlert').classList.remove('show'), 7000);
     fillFacets(); renderOverview(); renderExplore(); renderAnalysis(); renderWatches(); renderRuns();
+    if (activeView === 'favorites') renderFavorites();
   }
 }
 
 document.addEventListener('click', event => {
+  const favorite = event.target.closest('[data-favorite]'); if (favorite) { toggleFavorite(favorite); return; }
   const nav = event.target.closest('[data-view]'); if (nav) { go(nav.dataset.view); return; }
   const jump = event.target.closest('[data-go]'); if (jump) { go(jump.dataset.go); return; }
   const detail = event.target.closest('[data-detail]'); if (detail) { openDetail(detail.dataset.detail); return; }
@@ -430,6 +506,34 @@ document.addEventListener('click', event => {
     return;
   }
   const external = event.target.closest('[data-open-url]'); if (external) safe('open_url',{url:external.dataset.openUrl});
+});
+$('sideNav').querySelectorAll('[data-view]').forEach(button => {
+  const label = button.querySelector('span').textContent;
+  button.title = label; button.setAttribute('aria-label', label);
+});
+$('toggleSidebar').addEventListener('click', async () => {
+  const button = $('toggleSidebar'); button.disabled = true;
+  try {
+    const saved = await safe('set_sidebar_collapsed', {collapsed:!$('sidebar').classList.contains('collapsed')});
+    if (saved) applySidebarCollapsed(saved.sidebar_collapsed);
+  } finally { button.disabled = false; }
+});
+$('toggleTheme').addEventListener('click', () => saveTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));
+$('themeSelect').addEventListener('change', event => saveTheme(event.target.value));
+$('groupToggle').addEventListener('click', () => {
+  const open = $('groupPanel').hidden;
+  $('groupPanel').hidden = !open;
+  $('groupToggle').setAttribute('aria-expanded', String(open));
+});
+$('favoritePrev').addEventListener('click', () => {favoritePage--;renderFavorites();});
+$('favoriteNext').addEventListener('click', () => {favoritePage++;renderFavorites();});
+$('favoriteSort').addEventListener('change', () => {favoritePage=1;renderFavorites();});
+$('exportPostings').addEventListener('click', async () => {
+  const button = $('exportPostings'); button.disabled = true;
+  try {
+    const result = await safe('export_postings', {filters:exploreFilters(),sort:$('sortSelect').value});
+    if (result && !result.cancelled) toast(`공고 데이터 ${result.count}건을 CSV로 저장했습니다.`);
+  } finally { button.disabled = false; }
 });
 ['searchInput','companyFilter','sortSelect'].forEach(id =>
   $(id).addEventListener(id === 'searchInput' ? 'input' : 'change', () => {explorePage=1;renderExplore();}));
@@ -492,7 +596,7 @@ new QWebChannel(qt.webChannelTransport, async channel => {
   bridge = channel.objects.bridge;
   bridge.jobEvent.connect(handleEvent);
   const settings = await safe('settings');
-  if (settings) applyFontPercent(settings.font_percent);
+  if (settings) { applyFontPercent(settings.font_percent); applySidebarCollapsed(settings.sidebar_collapsed); applyTheme(settings.theme); }
   await renderProfile();
   await fillFacets();
   await Promise.all([renderOverview(),renderExplore(),renderAnalysis(),renderWatches(),renderRuns(),renderFields()]);

@@ -14,7 +14,7 @@ from saramin_finder.infrastructure.database import Store
 from saramin_finder.domain.models import SearchProfile
 from saramin_finder.domain.rules import REGION_OPTIONS, validate_profile
 from saramin_finder.infrastructure.csv_export import write_csv
-from saramin_finder.usecases.analyze import export_rows
+from saramin_finder.usecases.analyze import export_posting_rows, export_rows
 from saramin_finder.usecases.collect import Collector
 
 
@@ -156,6 +156,8 @@ class Bridge(QObject):
                                             sort=data.get("sort", "recent"))
         if action == "posting":
             return self.store.get_posting(str(data["id"]))
+        if action == "set_favorite":
+            return self.store.set_favorite(str(data["id"]), data["favorite"])
         if action == "facets":
             return self.store.facets()
         if action == "groups":
@@ -163,6 +165,11 @@ class Bridge(QObject):
         if action == "analysis":
             return self.store.analyze(data.get("kind", "qualification"),
                                       data.get("filters"), data.get("page", 1))
+        if action == "export_postings":
+            path, _ = QFileDialog.getSaveFileName(None, "공고 데이터 CSV 저장", "saramin-postings.csv",
+                                                  "CSV 파일 (*.csv)")
+            return {"count": write_csv(export_posting_rows(self.store, data.get("filters", {}),
+                                                           data.get("sort", "recent")), Path(path))} if path else {"cancelled": True}
         if action == "export_analysis":
             path, _ = QFileDialog.getSaveFileName(None, "분석 데이터 저장", "saramin-analysis.csv",
                                                   "CSV 파일 (*.csv)")
@@ -192,7 +199,13 @@ class Bridge(QObject):
         if action == "data_path":
             return str(self.store.path)
         if action == "settings":
-            return {"font_percent": self.store.get_font_percent()}
+            return {"font_percent": self.store.get_font_percent(),
+                    "sidebar_collapsed": self.store.get_sidebar_collapsed(),
+                    "theme": self.store.get_theme()}
+        if action == "set_theme":
+            return {"theme": self.store.set_theme(data["theme"])}
+        if action == "set_sidebar_collapsed":
+            return {"sidebar_collapsed": self.store.set_sidebar_collapsed(data["collapsed"])}
         if action == "set_font_percent":
             return {"font_percent": self.store.set_font_percent(data["font_percent"])}
         if action == "open_url":

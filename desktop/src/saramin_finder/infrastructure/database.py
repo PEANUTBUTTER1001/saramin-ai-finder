@@ -43,7 +43,7 @@ class Store:
         with self.connect() as con:
             con.execute("PRAGMA journal_mode=WAL")
             version = con.execute("PRAGMA user_version").fetchone()[0]
-            if version > 6:
+            if version > 7:
                 raise RuntimeError("이 앱보다 새로운 데이터베이스입니다. 기존 파일을 변경하지 않았습니다.")
             if version == 0:
                 con.executescript("""BEGIN IMMEDIATE;
@@ -194,6 +194,54 @@ class Store:
                                     ((row["rec_idx"], word) for word in sector_keywords(row["sector"])))
                 con.execute("INSERT OR IGNORE INTO schema_version VALUES (?,?)", (6, utc_now()))
                 con.execute("PRAGMA user_version=6")
+            if version <= 6:
+                columns = {row[1] for row in con.execute("PRAGMA table_info(postings)")}
+                for name, definition in (
+                    ("favorite", "INTEGER NOT NULL DEFAULT 0 CHECK(favorite IN (0,1))"),
+                    ("first_watch_collected_at", "TEXT NOT NULL DEFAULT ''"),
+                    ("last_watch_collected_at", "TEXT NOT NULL DEFAULT ''"),
+                ):
+                    if name not in columns:
+                        con.execute(f"ALTER TABLE postings ADD COLUMN {name} {definition}")
+                alert_columns = {row[1] for row in con.execute("PRAGMA table_info(alerts)")}
+                if alert_columns and "collected_at" not in alert_columns:
+                    con.execute("ALTER TABLE alerts ADD COLUMN collected_at TEXT NOT NULL DEFAULT ''")
+                con.execute("INSERT OR IGNORE INTO app_settings VALUES ('sidebar_collapsed','0')")
+                con.execute("INSERT OR IGNORE INTO schema_version VALUES (?,?)", (7, utc_now()))
+                con.execute("PRAGMA user_version=7")
+
+    def get_theme(self) -> str:
+        with self.connect() as con:
+            row = con.execute("SELECT value FROM app_settings WHERE key='theme'").fetchone()
+        return row[0] if row and row[0] in ("light", "dark") else "light"
+
+    def set_theme(self, theme: str) -> str:
+        if not isinstance(theme, str) or theme not in ("light", "dark"):
+            raise ValueError("화면 모드는 라이트 또는 다크로 선택해 주세요.")
+        with self.connect() as con:
+            con.execute("""INSERT INTO app_settings(key,value) VALUES ('theme',?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (theme,))
+        return theme
+
+    def get_sidebar_collapsed(self) -> bool:
+        with self.connect() as con:
+            return con.execute("SELECT value FROM app_settings WHERE key='sidebar_collapsed'").fetchone()[0] == "1"
+
+    def set_sidebar_collapsed(self, collapsed: bool) -> bool:
+        if not isinstance(collapsed, bool):
+            raise ValueError("사이드바 축소 상태가 올바르지 않습니다.")
+        with self.connect() as con:
+            con.execute("UPDATE app_settings SET value=? WHERE key='sidebar_collapsed'", (str(int(collapsed)),))
+        return collapsed
+
+    def set_favorite(self, rec_idx: str, favorite: bool) -> dict:
+        if not isinstance(favorite, bool):
+            raise ValueError("즐겨찾기 상태가 올바르지 않습니다.")
+        with self.connect() as con:
+            changed = con.execute("UPDATE postings SET favorite=? WHERE rec_idx=?", (int(favorite), rec_idx))
+            if not changed.rowcount:
+                raise ValueError("저장된 공고를 찾을 수 없습니다.")
+        return {"id": rec_idx, "favorite": favorite}
 
     def get_font_percent(self) -> int:
         with self.connect() as con:
@@ -320,6 +368,12 @@ class Store:
                  posting.career, posting.education, posting.conditions, posting.deadline,
                  posting.posted_date, posting.updated_date, posting.deadline_date,
                  "", "pending", stamp, stamp))
+            run = con.execute("SELECT source FROM crawl_runs WHERE id=?", (run_id,)).fetchone()
+            if run and run["source"] == "watch":
+                con.execute("""UPDATE postings SET
+                    first_watch_collected_at=CASE WHEN first_watch_collected_at='' THEN ?
+                                                 ELSE first_watch_collected_at END,
+                    last_watch_collected_at=? WHERE rec_idx=?""", (stamp, stamp, posting.rec_idx))
             con.execute("DELETE FROM posting_sector_keywords WHERE posting_id=?", (posting.rec_idx,))
             con.executemany("INSERT INTO posting_sector_keywords VALUES (?,?)",
                             ((posting.rec_idx, word) for word in sector_keywords(posting.sector)))
@@ -351,6 +405,8 @@ class Store:
 
     def _where(self, filters: dict, section_kind: str | None = None):
         clauses, args = [], []
+        if filters.get("favorite"):
+            clauses.append("p.favorite=1")
         def choices(key):
             raw = filters.get(key) or []
             if isinstance(raw, str):
@@ -591,8 +647,10 @@ class Store:
                 cur = con.execute("INSERT OR IGNORE INTO watch_seen VALUES (?,?)", (rule_id, posting_id))
                 if was_ready and cur.rowcount:
                     alert = con.execute("""INSERT INTO alerts(rule_id,generation,query_snapshot,
-                        posting_id,created_at) VALUES (?,?,?,?,?)""",
-                        (rule_id, rule["generation"], rule["query"], posting_id, utc_now()))
+                        posting_id,created_at,collected_at) VALUES (?,?,?,?,?,?)""",
+                        (rule_id, rule["generation"], rule["query"], posting_id, utc_now(),
+                         con.execute("SELECT last_watch_collected_at FROM postings WHERE rec_idx=?",
+                                     (posting_id,)).fetchone()[0]))
                     new_alert_ids.append(alert.lastrowid)
             message = (f"신규 {len(new_alert_ids)}건 발견" if was_ready else
                        f"기준 {len(posting_ids)}건 등록")
@@ -602,7 +660,7 @@ class Store:
             if not new_alert_ids:
                 return []
             marks = ",".join("?" for _ in new_alert_ids)
-            return [dict(x) for x in con.execute(f"""SELECT a.*,p.company,p.title,p.url
+            return [dict(x) for x in con.execute(f"""SELECT a.*,p.company,p.title,p.url,p.favorite
                 FROM alerts a JOIN postings p ON p.rec_idx=a.posting_id
                 WHERE a.id IN ({marks}) ORDER BY a.id DESC""", new_alert_ids)]
 
@@ -619,7 +677,7 @@ class Store:
 
     def alerts(self, limit: int = 100) -> list[dict]:
         with self.connect() as con:
-            return [dict(x) for x in con.execute("""SELECT a.*,p.company,p.title,p.url
+            return [dict(x) for x in con.execute("""SELECT a.*,p.company,p.title,p.url,p.favorite
                 FROM alerts a JOIN postings p ON p.rec_idx=a.posting_id
                 ORDER BY a.id DESC LIMIT ?""", (limit,))]
 

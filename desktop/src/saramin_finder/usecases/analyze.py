@@ -3,6 +3,32 @@ from __future__ import annotations
 from saramin_finder.infrastructure.database import Store
 
 
+def export_posting_rows(store: Store, filters: dict, sort: str = "recent"):
+    """Export every filtered posting in the same order as the archive table."""
+    yield ["번호", "즐겨찾기", "공고 ID", "회사", "제목", "직무 분야", "경력", "학력",
+           "조건 원문", "공고등록일", "수정일", "채용마감일", "마감 표시 원문",
+           "수집 시각", "최초 감시 수집 시각", "최근 감시 수집 시각", "상세 상태",
+           "기술 스택", "자격요건", "우대사항", "검색어", "원본 URL"]
+    page, number = 1, 0
+    while True:
+        result = store.list_postings(filters, page=page, per_page=100, sort=sort)
+        for row in result["items"]:
+            item = store.get_posting(row["rec_idx"])
+            number += 1
+            yield [number, "예" if item["favorite"] else "아니오", item["rec_idx"],
+                   item["company"], item["title"], item["sector"], item["career"], item["education"],
+                   item["conditions"], item["posted_date"], item["updated_date"],
+                   item["deadline_date"], item["deadline"], item["last_seen_at"],
+                   item["first_watch_collected_at"], item["last_watch_collected_at"],
+                   item["detail_status"], ", ".join(row["tech"]),
+                   item["sections"].get("qualification", {}).get("text", ""),
+                   item["sections"].get("preference", {}).get("text", ""),
+                   ", ".join(item["queries"]), item["url"]]
+        if page * result["per_page"] >= result["total"]:
+            break
+        page += 1
+
+
 def export_rows(store: Store, kind: str, filters: dict):
     """Yield CSV rows without opening files or altering the archive."""
     yield ["공고 ID", "회사", "제목", "직무 분야", "경력", "수집 시각",
