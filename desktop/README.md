@@ -10,20 +10,31 @@
 
 업데이트: 앱을 종료하고 `git pull` 후 `설치.bat`를 다시 실행합니다. 앱이 실행 중이면 배포 폴더를 지우지 않고 종료를 안내합니다. 공고 DB는 배포 폴더 밖에 있어 유지됩니다.
 
-첫 실행 시 `%LOCALAPPDATA%\SaraminAIFinder\jobs.sqlite3`가 생성됩니다. 수집한 공고·자격요건·우대사항·감시 조건·알림은 여기에 보관됩니다. 오류 로그는 같은 위치의 `desktop.log`입니다.
+첫 실행 시 `%LOCALAPPDATA%\SaraminAIFinder\jobs.sqlite3`가 생성됩니다. 수집한 공고·자격요건·우대사항·즐겨찾기·감시 조건·알림·감시 수집시각·화면 설정은 여기에 보관됩니다. 오류 로그는 같은 위치의 `desktop.log`입니다.
 
 ## 개발·배포물 생성
 
-개발·테스트는 Windows 64비트 및 Python 3.12 환경에서 실행합니다.
+개발·테스트는 Windows 64비트 및 Python 3.12 환경에서 저장소 루트를 기준으로 실행합니다. 아래 `python`은 Python 3.12 환경을 가리켜야 합니다. 설치·배포물 준비에 사용할 수 있는 Python 3.9 이상과 개발용 실행 환경은 구분합니다.
 
 ```powershell
 python -m pip install -e "desktop[test]"
 python -m pytest -q --basetemp desktop/.pytest-tmp desktop/tests
 ```
 
+화면 동작을 변경한 경우 Node.js가 있는 환경에서 `node --check desktop/src/saramin_finder/ui/app.js`로 JavaScript 구문을 확인합니다. 배포물 생성 후에는 아래 명령으로 실제 Qt/HTML 연결을 검사합니다. 검증 데이터는 `desktop/.smoke/`의 격리 DB에 저장하며 사용자 공고 DB를 사용하지 않습니다.
+
+```powershell
+$env:SARFINDER_SMOKE_OFFSCREEN = "1"
+& .\desktop\dist\SaraminFinder\runtime\python.exe .\desktop\tools\gui_smoke.py workbench
+& .\desktop\dist\SaraminFinder\runtime\python.exe .\desktop\tools\gui_smoke.py workbench_restore
+& .\desktop\dist\SaraminFinder\runtime\python.exe .\desktop\tools\gui_smoke.py profile
+```
+
+`workbench`는 두 모드·9개 화면·900/1280px·80/100/140%와 즐겨찾기·CSV·새 공고 최대 3열 배치를, `workbench_restore`는 재실행 복원을, `profile`은 공통 검색 조건 저장을 검사합니다. 실행되는 것은 격리된 UI 검사이며 실제 사람인 수집·Windows 알림 배너 표시는 별도 확인 대상입니다.
+
 배포물만 만들 때는 `python desktop/packaging/build_portable.py`를 실행합니다(`설치.bat`의 1단계와 같음). 공식 Python 3.12.10 내장용 실행 환경과 고정 버전 의존성의 Python 3.12 win_amd64 휠을 받아 `desktop/dist/SaraminFinder/`를 만들므로, 빌드하는 Python은 3.9 이상이면 버전이 달라도 됩니다. 대상 PC에서는 다운로드나 `pip`가 필요하지 않습니다.
 
-화면 레이아웃을 다시 동기화할 때만 `python desktop/tools/build_ui.py`를 실행합니다. 이 스크립트는 기존 프로토타입의 콘텐츠에 `src/saramin_finder/ui/workbench.css`의 선택된 워크벤치 스타일을 적용하고, 샘플 JavaScript 대신 실제 `app.js`를 연결합니다.
+앱의 실행 화면은 `src/saramin_finder/ui/index.html`과 `app.js`입니다. `workbench.css`는 화면 생성용 기본 스타일이며, `python desktop/tools/build_ui.py`가 글자 크기 보정·여백 배율을 적용해 `index.html`을 생성하도록 구현되어 있습니다. 다만 현재 `main`에는 이 스크립트의 입력인 `outputs/saramin-desktop-prototype.html`이 삭제된 상태이므로 화면 재생성 명령은 입력 원본 확보 전까지 실행할 수 없습니다. 일반 설치·배포물 생성은 저장소에 있는 `index.html`을 사용하며 이 재생성 명령을 호출하지 않습니다.
 
 ## 동작 기준
 
