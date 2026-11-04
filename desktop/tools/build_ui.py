@@ -1,7 +1,6 @@
-"""Copy the approved visual prototype into the desktop UI shell.
+"""Build the desktop content with the selected data-workbench styles.
 
-The generated page keeps the prototype CSS and layout. Its sample-data scripts are
-replaced with the real QWebChannel client in app.js.
+Prototype sample scripts are replaced with the real QWebChannel client in app.js.
 """
 
 import re
@@ -11,49 +10,6 @@ root = Path(__file__).resolve().parents[2]
 source = (root / "outputs" / "saramin-desktop-prototype.html").read_text(encoding="utf-8")
 page = source.split("  <script>", 1)[0]
 page = page.replace("Saramin AI Finder — PC 앱 프로토타입", "Saramin Finder — PC 공고 관리")
-page = page.replace("</style>", """
-    .analysis-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px}
-    .analysis-row{padding:16px 18px;border-bottom:1px solid var(--line)}
-    .analysis-row:last-child{border:0}
-    .analysis-row strong{display:block;font-size:13px;color:#263b56}
-    .analysis-row small{display:block;color:var(--muted);margin:5px 0}
-    .analysis-row p{white-space:pre-wrap;line-height:1.6;font-size:12px;margin:10px 0;color:#43536b}
-    .analysis-actions{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px}
-    .analysis-stat{padding:12px 16px;border:0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;width:100%;background:#fff;cursor:pointer;text-align:left}
-    .analysis-stat:hover{background:#f5f8fe}
-    .alert-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 8px}
-    .profile-regions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;max-height:165px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;margin:7px 0 16px}
-    .profile-check{display:flex;align-items:center;gap:7px;font-size:11px;color:#43536a;cursor:pointer;padding:4px}
-    .profile-check input{width:auto!important;height:auto!important;margin:0;accent-color:var(--blue)}
-    .profile-check:has(input:disabled){opacity:.5}
-    .profile-summary{font-size:12px;color:#4c6685;margin-bottom:18px}
-    .crawl-criteria{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
-    .crawl-criteria .profile-regions{max-height:125px}
-    .data-table{min-width:920px}
-    .run-events-button,.run-event-link{display:block;background:none;border:0;color:#9dc7ff;text-align:left;padding:3px 0;font:inherit}
-    .run-events-button{text-decoration:underline;margin:4px 0;cursor:pointer}
-    .run-event-link{padding-left:12px;cursor:pointer}
-    .run-event-link:hover{text-decoration:underline}
-    .run-event-group{padding:4px 0;border-top:1px solid #31425d}
-    .run-event-group strong{color:#dbe7f8}
-    .multi-filter{position:relative;min-width:0}
-    .multi-filter summary{list-style:none;min-height:37px;border:1px solid #dce3ed;border-radius:8px;background:#fff;padding:9px 10px;color:#334359;font-size:11px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .multi-filter summary::-webkit-details-marker{display:none}
-    .multi-filter summary:focus-visible{outline:3px solid #8aa9ff}
-    .multi-filter[open] summary{border-color:#82a0ed}
-    .multi-options{position:absolute;z-index:12;top:39px;left:0;min-width:100%;width:max(230px,100%);max-width:min(340px,85vw);background:#fff;border:1px solid #dce3ed;border-radius:9px;box-shadow:0 14px 30px #17253f26;padding:7px}
-    .multi-options-list{max-height:230px;overflow:auto}
-    .multi-option{display:flex;align-items:center;gap:8px;padding:6px 5px;font-size:11px;cursor:pointer;white-space:normal}
-    .multi-option input{width:auto;height:auto;margin:0;accent-color:var(--blue)}
-    .multi-clear{width:100%;border:0;background:#edf3ff;color:#365dc7;border-radius:6px;padding:7px;font-size:11px;text-align:left}
-    .settings-card{max-width:650px;padding:24px}
-    .settings-range{width:100%;accent-color:var(--blue);margin:18px 0}
-    .settings-value{font-size:20px;font-weight:700}
-    .settings-note{color:var(--muted);line-height:1.6}
-    [hidden]{display:none!important}
-    @media(max-width:1350px){.explore-grid{grid-template-columns:minmax(0,1fr)}}
-    @media(max-width:900px){.analysis-layout{grid-template-columns:1fr}}
-  </style>""")
 page = page.replace('<span class="demo-pill">샘플 데이터 · 프로토타입</span>',
                     '<span class="demo-pill">실제 로컬 데이터</span>')
 page = page.replace('PC 로컬 저장 구상', 'PC 로컬 누적 저장')
@@ -93,8 +49,6 @@ profile_card = """
 """
 page = page.replace('            <div class="watch-stack">\n              <div class="card">',
                     '            <div class="watch-stack">\n' + profile_card + '              <div class="card">', 1)
-page = page.replace('          <div class="watch-layout">',
-                    '          <div class="notice profile-summary" id="profileSummary">검색 조건을 불러오는 중입니다.</div>\n          <div class="watch-layout">', 1)
 page = page.replace('>샘플 수집 시작</button>', '>실제 수집 시작</button>')
 page = page.replace('현재 Android 앱의 검색 조건을 기본값으로 반영', '감시 공통 검색 조건을 기본값으로 불러옵니다.')
 manual_criteria = """<div class="field crawl-criteria"><label>이번 수집 검색 조건</label><p class="form-note">감시 조건을 기본값으로 불러오며, 여기서 바꿔도 감시 설정은 바뀌지 않습니다.</p><button class="btn small" type="button" id="resetCrawlCriteria">감시 조건 다시 불러오기</button>
@@ -119,8 +73,7 @@ page = page.replace('실제 사이트 요청과 Windows 시스템 알림은 수�
                     '감시 조건과 알림은 로컬에 저장되며 앱을 다시 열어도 유지됩니다.')
 page = page.replace('저장된 샘플 공고 상세를 열 수 있습니다.', '저장된 공고 상세를 열 수 있습니다.')
 page = page.replace('WINDOWS 알림 시연', '새 공고 알림')
-page = page.replace('검색어마다 확인 간격을 정하고, 처음 발견한 공고만 알림으로 받습니다.',
-                    '검색어별 감시를 시작하면 설정한 간격으로 새 공고를 확인합니다.')
+page = page.replace('<p class="lead">검색어마다 확인 간격을 정하고, 처음 발견한 공고만 알림으로 받습니다.</p>', '', 1)
 page = page.replace('여러 검색어를 각각 다른 간격으로 확인',
                     '검색어마다 간격을 정하고 감시 시작으로 자동 확인합니다.')
 page = page.replace('간격과 다음 확인 시각을 개별 관리합니다.',
@@ -128,6 +81,22 @@ page = page.replace('간격과 다음 확인 시각을 개별 관리합니다.',
 page = page.replace('추가 직후 첫 확인은 기존 공고를 기준으로 등록합니다. 다음 확인부터 새 공고가 발견되면 알립니다.',
                     '감시 시작 직후 첫 확인에서 기준 목록을 등록합니다. 앱을 다시 열면 감시 시작을 다시 눌러야 합니다.')
 page = page.replace('새 공고 알림</small>', '작업 결과 알림</small>')
+page, removed = re.subn(r'\s*<div class="card"><div class="card-head"><div><h2>감시 방식</h2>.*?<div class="signal">.*?</p></div></div>', '', page, count=1, flags=re.S)
+if removed != 1:
+    raise RuntimeError('Missing watch guidance block')
+alert_card = '<div class="card"><div class="card-head"><div><h2>새 공고 알림 <span id="alertCount">0</span></h2><p>알림에서 저장된 공고 상세를 열 수 있습니다.</p></div></div><div class="alert-list" id="alertList" aria-live="polite"></div></div>'
+if page.count(alert_card) != 1:
+    raise RuntimeError('Missing alert list to move')
+page = page.replace(alert_card, '', 1)
+alerts_view = '''        <section class="view" id="view-alerts" aria-label="새 공고" hidden>
+          <div class="page-head"><div><p class="eyebrow">New Postings</p><h1>새 공고</h1></div></div>
+          ''' + alert_card + '''
+        </section>
+'''
+page = page.replace('        <section class="view" id="view-crawl"', alerts_view + '        <section class="view" id="view-crawl"', 1)
+page = page.replace('<b class="nav-count" id="sideAlertCount" hidden>0</b>', '', 1)
+page = page.replace('<button class="nav-btn" data-view="crawl">', '<button class="nav-btn" data-view="alerts"><svg class="nav-icon"><use href="#i-inbox"/></svg><span>새 공고</span><b class="nav-count" id="sideAlertCount" hidden>0</b></button>\n        <button class="nav-btn" data-view="crawl">', 1)
+page = page.replace('<button data-view="crawl"><svg>', '<button data-view="alerts"><svg><use href="#i-inbox"/></svg>새 공고</button><button data-view="crawl"><svg>', 1)
 for field_id, label in (("sectorFilter", "분야"), ("careerFilter", "경력"),
                         ("techFilter", "기술"), ("analysisSector", "분야"),
                         ("analysisCareer", "경력"), ("analysisTech", "기술")):
@@ -157,9 +126,57 @@ settings = """
 """
 page = page.replace('        <section class="view" id="view-fields"',
                     settings + '        <section class="view" id="view-fields"', 1)
-page = page.replace(':root{', ':root{--font-scale:1;', 1)
-page = page.replace('font-family:Segoe UI', 'font-family:Pretendard,Segoe UI', 1)
-page = page.replace('.sidebar{width:232px;', '.sidebar{width:calc(232px * var(--font-scale));', 1)
+page = page.replace('    <symbol id="i-grid"', '''    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M5 4h14l3 11v5H2v-5L5 4ZM2 15h6l2 3h4l2-3h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 4v16m7-12-4 4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-grid"''', 1)
+page = page.replace('<aside class="sidebar" aria-label="주 메뉴">', '<aside class="sidebar" id="sidebar" aria-label="주 메뉴">', 1)
+page = page.replace('      <div class="nav-label">Workspace</div>\n', '', 1)
+page = page.replace('<strong>Saramin Finder</strong><small>DESKTOP WORKSPACE</small>',
+                    '<strong>Saramin</strong><strong>Finder</strong>', 1)
+page = page.replace('      <div class="sidebar-bottom"><strong>로컬 데이터 보관</strong><p>검색 결과를 누적 보관하고<br>필드와 상세 텍스트로 다시 찾습니다.</p></div>\n', '', 1)
+page = page.replace('<button class="nav-btn" data-view="analysis">', '''<button class="nav-btn" data-view="favorites"><svg class="nav-icon"><use href="#i-star" fill="none"/></svg><span>즐겨찾기</span></button>
+        <button class="nav-btn" data-view="analysis">''', 1)
+page = page.replace('<button data-view="analysis"><svg>', '<button data-view="favorites"><svg><use href="#i-star" fill="none"/></svg>즐겨찾기</button><button data-view="analysis"><svg>', 1)
+page = page.replace('<th>공고 / 회사</th><th>분야</th><th>조건</th><th>공고등록일</th><th>채용마감일</th><th>사람인 공고</th><th>상세</th>',
+                    '<th class="favorite-cell" aria-label="즐겨찾기">☆</th><th>공고 / 회사</th><th>분야</th><th>조건</th><th>공고등록일</th><th>채용마감일</th><th>수집시각</th><th>사람인 공고</th><th>상세</th>', 1)
+favorites = '''
+        <section class="view" id="view-favorites" aria-label="즐겨찾기" hidden>
+          <div class="page-head"><div><p class="eyebrow">Favorites</p><h1>즐겨찾기 공고</h1><p class="lead">별표로 저장한 공고만 모아 봅니다. 별표를 다시 누르면 즐겨찾기에서 해제됩니다.</p></div></div>
+          <div class="card"><div class="card-head"><div><h2>즐겨찾기 <span id="favoriteCount">0</span>건</h2></div>
+            <div class="field" style="width:150px"><label for="favoriteSort">정렬</label><select id="favoriteSort"><option value="recent">최근 수집순</option><option value="posted_newest">공고등록일 · 최근순</option><option value="posted_oldest">공고등록일 · 오래된순</option><option value="deadline_soon">채용마감일 · D-Day 짧은순</option><option value="deadline_late">채용마감일 · D-Day 긴순</option><option value="company">회사명순</option></select></div></div>
+            <div class="table-wrap"><table class="data-table"><thead><tr><th class="favorite-cell" aria-label="즐겨찾기">☆</th><th>공고 / 회사</th><th>분야</th><th>조건</th><th>공고등록일</th><th>채용마감일</th><th>수집시각</th><th>사람인 공고</th><th>상세</th></tr></thead><tbody id="favoriteRows"></tbody></table></div>
+            <div class="empty" id="favoriteEmpty" hidden><strong>즐겨찾기한 공고가 없습니다</strong>공고 데이터나 새 공고 알림에서 별표를 눌러 저장하세요.</div>
+            <div class="table-footer"><span id="favoriteSummary"></span><span><button class="btn small" id="favoritePrev">이전</button> <button class="btn small" id="favoriteNext">다음</button></span></div>
+          </div>
+        </section>
+'''
+page = page.replace('        <section class="view" id="view-analysis"', favorites + '        <section class="view" id="view-analysis"', 1)
+page = page.replace('<button class="btn primary" data-go="crawl"><svg><use href="#i-download"/></svg>새 수집</button>',
+                    '<div class="page-actions"><button class="btn" type="button" id="exportPostings">CSV 저장</button><button class="btn primary" data-go="crawl"><svg><use href="#i-download"/></svg>새 수집</button></div>', 1)
+page = page.replace('<th class="favorite-cell" aria-label="즐겨찾기">☆</th><th>공고 / 회사</th>',
+                    '<th class="favorite-cell" aria-label="즐겨찾기">☆</th><th class="posting-number">번호</th><th>공고 / 회사</th>')
+# Sidebar width follows the explicit toggle at tablet sizes too.
+page = page.replace('.sidebar{width:68px;padding-inline:8px}.brand{padding:2px 7px 28px}.brand div:last-child,.nav-label,.nav-btn span,.sidebar-bottom{display:none}.nav-btn{justify-content:center;padding:12px}', '')
+page = re.sub(r'<style>.*?</style>', '', page, flags=re.S)
+page = page.replace('</head>', '<style>\n' +
+                    (root / 'desktop/src/saramin_finder/ui/workbench.css').read_text(encoding='utf-8') +
+                    '\n  </style>\n</head>', 1)
+page = page.replace('<body>', '<body data-theme="light">', 1)
+page = page.replace('    <symbol id="i-grid"', '''    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-grid"''', 1)
+page = page.replace('<header class="topbar"><div class="crumb">', '''<header class="topbar"><div class="topbar-start"><button class="sidebar-toggle" id="toggleSidebar" type="button" aria-controls="sideNav" aria-expanded="true" title="사이드바 축소" aria-label="사이드바 축소"><svg class="nav-icon" aria-hidden="true"><use href="#i-panel"/></svg></button><div class="crumb">''', 1)
+page = page.replace('<strong id="crumbName">대시보드</strong></div><div class="top-actions">', '''<strong id="crumbName">대시보드</strong></div></div><div class="top-actions"><div class="theme-control"><span id="themeLabel">라이트 모드</span><button class="theme-toggle" id="toggleTheme" type="button" role="switch" aria-label="다크 모드" aria-checked="false" title="다크 모드로 전환"><span class="switch-thumb" aria-hidden="true"></span><svg class="switch-sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="switch-moon" aria-hidden="true"><use href="#i-moon"/></svg></button></div>''', 1)
+page = page.replace('<span class="demo-pill">실제 로컬 데이터</span>', '', 1)
+page = page.replace('<span class="local-dot">PC 로컬 누적 저장</span>', '', 1)
+page = page.replace('<div class="page-actions"><button class="btn" type="button" id="exportPostings">',
+                    '<div class="page-actions"><button class="btn" type="button" id="groupToggle" aria-controls="groupPanel" aria-expanded="false">값별 분류</button><button class="btn" type="button" id="exportPostings">', 1)
+page = page.replace('<aside class="card group-card">', '<aside class="card group-card" id="groupPanel" aria-label="값별 분류" hidden>', 1)
+page = page.replace('<div class="card settings-card"><h2>글자 크기</h2>', '''<div class="card settings-card"><div class="theme-setting"><h2>화면 모드</h2><p class="settings-note">모든 화면에 적용하고 다음 실행에도 유지합니다.</p><div class="field"><label for="themeSelect">라이트 · 다크</label><select id="themeSelect"><option value="light">라이트 모드</option><option value="dark">다크 모드</option></select></div></div><h2>글자 크기</h2>''', 1)
+notice = '<div class="notice"><strong>로컬 보관</strong><span>공고 목록과 읽을 수 있는 상세 텍스트를 이 PC에 누적 저장합니다.</span></div>'
+page = page.replace('        ' + notice + '\n', '', 1)
+page = page.replace('    </main>', '      ' + notice.replace('class="notice"', 'class="local-status"') + '\n    </main>', 1)
 page = page.replace('</style>', """
     @font-face{font-family:Pretendard;src:url('../../../font/Pretendard-Regular.ttf');font-weight:400}
     @font-face{font-family:Pretendard;src:url('../../../font/Pretendard-Medium.otf');font-weight:500}
@@ -167,10 +184,21 @@ page = page.replace('</style>', """
     @font-face{font-family:Pretendard;src:url('../../../font/Pretendard-Bold.ttf');font-weight:700}
     @font-face{font-family:Pretendard;src:url('../../../font/Pretendard-ExtraBold.otf');font-weight:800 900}
   </style>""", 1)
-page = re.sub(r'font-size:(\d+(?:\.\d+)?)px',
-              lambda match: f'font-size:calc({match.group(1)}px * var(--font-scale))', page)
-page = re.sub(r'font:(\d+(?:\.\d+)?)px',
-              lambda match: f'font:calc({match.group(1)}px * var(--font-scale))', page)
+# Current typography offset: +3 CSS px, retaining the existing 80–140% user scale.
+page = re.sub(r'font-size:calc\((\d+(?:\.\d+)?)px \* var\(--font-scale\)\)',
+              lambda match: f'font-size:calc({float(match.group(1)) + 3:g}px * var(--font-scale))', page)
+page = re.sub(r'(font-size|font):(\d+(?:\.\d+)?)px',
+              lambda match: f'{match.group(1)}:calc({float(match.group(2)) + 3:g}px * var(--font-scale))', page)
+
+def compact_spacing(match):
+    value = re.sub(r'(-?\d+(?:\.\d+)?)px',
+                   lambda size: f'{float(size.group(1)) * 0.88:g}px', match.group(2))
+    return f'{match.group(1)}:{value}'
+
+# Reduce whitespace declarations only; preserve icon sizes, switch geometry, and borders.
+page = re.sub(r'\b((?:padding|margin)(?:-[a-z]+)*|(?:row-|column-)?gap)\s*:\s*([^;{}"<>]+)',
+              compact_spacing, page)
 page += '  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>\n  <script src="app.js"></script>\n</body>\n</html>\n'
+page = re.sub(r'(?m)^[ \t]+$', '', page)
 (root / "desktop" / "src" / "saramin_finder" / "ui" / "index.html").parent.mkdir(parents=True, exist_ok=True)
 (root / "desktop" / "src" / "saramin_finder" / "ui" / "index.html").write_text(page, encoding="utf-8")

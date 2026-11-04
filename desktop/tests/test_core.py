@@ -12,7 +12,7 @@ from saramin_finder.infrastructure.saramin import (SaraminClient, deadline_date,
                                                    explicit_closure, listing_dates,
                                                    parse_detail, parse_list, search_params)
 from saramin_finder.infrastructure.saramin import CrawlError
-from saramin_finder.usecases.analyze import export_rows
+from saramin_finder.usecases.analyze import export_posting_rows, export_rows
 from saramin_finder.infrastructure.csv_export import write_csv
 from saramin_finder.usecases.collect import Collector
 
@@ -231,6 +231,31 @@ def test_csv_has_separate_qualification_and_preference_columns(tmp_path):
     assert {"공고등록일", "채용마감일", "마감 표시 원문", "원본 URL"}.issubset(rows[0])
 
 
+def test_archive_csv_exports_all_filtered_pages_in_selected_order(tmp_path):
+    from dataclasses import replace
+    import csv
+    store = Store(tmp_path / "archive.sqlite3")
+    run = store.start_run("manual", "AI", store.get_profile(), 1)
+    for number in range(105):
+        store.save_posting(replace(sample_post(str(1000 + number)),
+                                   company=f"회사{number:03}", title='AI, 개발자 "채용"'),
+                           Detail(status="failed"), run)
+    store.save_posting(replace(sample_post("9999"), sector="기획"), sample_detail(), run)
+    store.set_favorite("1000", True)
+    path = tmp_path / "postings.csv"
+    assert write_csv(export_posting_rows(store, {"sector": ["AI·데이터"]}, "company"), path) == 105
+    assert path.read_bytes().startswith(b"\xef\xbb\xbf")
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert [row["번호"] for row in rows] == [str(n) for n in range(1, 106)]
+    assert rows[0]["회사"] == "회사000" and rows[-1]["회사"] == "회사104"
+    assert rows[0]["제목"] == 'AI, 개발자 "채용"' and rows[0]["즐겨찾기"] == "예"
+    assert all(row["상세 상태"] == "failed" for row in rows)
+    assert rows[0]["원본 URL"].startswith("https://")
+    assert list(export_posting_rows(store, {"text": "검색결과없음"}))[0][0] == "번호"
+    assert len(list(export_posting_rows(store, {"text": "검색결과없음"}))) == 1
+
+
 def test_collector_persists_and_watch_uses_registration_sort(tmp_path):
     store = Store(tmp_path / "jobs.sqlite3")
     profiles = []
@@ -409,7 +434,7 @@ def test_upgrade_keeps_existing_custom_watch(tmp_path):
     assert {item["query"] for item in watches} == {"백엔드", "AI"}
     assert reopened.get_watch(custom)["interval_minutes"] == 120
     with sqlite3.connect(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_upgrade_corrects_old_education_code_and_resets_baseline(tmp_path):
@@ -456,7 +481,7 @@ def test_v3_database_adds_date_columns_without_losing_postings(tmp_path):
         row = con.execute("SELECT * FROM postings WHERE rec_idx='123'").fetchone()
         assert row["title"] == "AI 개발자" and row["posted_date"] == ""
         assert row["deadline_date"] == "" and row["last_seen_at"] == "old"
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_custom_profile_changes_request_and_resets_watch_safely(tmp_path):
@@ -590,3 +615,139 @@ def test_failed_watch_respects_configured_interval(tmp_path):
     store.fail_watch(rule_id, "일시적인 오류")
     after = datetime.fromisoformat(store.get_watch(rule_id)["next_due_at"])
     assert timedelta(minutes=16, seconds=58) <= after - before <= timedelta(minutes=17, seconds=2)
+
+
+def test_favorites_persist_across_recrawl_and_share_alert_state(tmp_path):
+    path = tmp_path / "favorites.sqlite3"
+    store = Store(path)
+    rule = store.list_watches()[0]["id"]
+    run = store.start_run("watch", "AI", store.get_profile(), 1, rule)
+    store.save_posting(sample_post("123"), sample_detail(), run)
+    store.finish_watch(rule, ["123"])
+    store.save_posting(sample_post("456"), sample_detail(), run)
+    store.finish_watch(rule, ["123", "456"])
+    store.set_favorite("456", True)
+    store.set_favorite("456", True)  # Repeated desired-state requests are idempotent.
+    store.save_posting(sample_post("456"), Detail(status="failed"), run)
+    reopened = Store(path)
+    assert reopened.get_posting("456")["favorite"] == 1
+    assert reopened.alerts()[0]["favorite"] == 1
+    result = reopened.list_postings({"favorite": True})
+    assert result["total"] == 1 and result["items"][0]["rec_idx"] == "456"
+    assert reopened.list_postings({"favorite": True, "company": "다른회사"})["total"] == 0
+    reopened.set_favorite("456", False)
+    assert reopened.list_postings({"favorite": True})["total"] == 0
+    assert reopened.alerts()[0]["favorite"] == 0
+    assert reopened.list_postings()["total"] == 2
+    with pytest.raises(ValueError):
+        reopened.set_favorite("missing", True)
+    with pytest.raises(ValueError):
+        reopened.set_favorite("456", "false")
+
+
+def test_watch_collection_times_are_separate_and_alert_keeps_original_time(tmp_path, monkeypatch):
+    import saramin_finder.infrastructure.database as database
+    store = Store(tmp_path / "times.sqlite3")
+    rule = store.list_watches()[0]["id"]
+    manual = store.start_run("manual", "AI", store.get_profile(), 1)
+    watch = store.start_run("watch", "AI", store.get_profile(), 1, rule)
+    now = "2026-11-04T01:00:00+00:00"
+    monkeypatch.setattr(database, "utc_now", lambda: now)
+    store.save_posting(sample_post(), sample_detail(), manual)
+    assert store.get_posting("123")["last_watch_collected_at"] == ""
+    store.save_posting(sample_post(), sample_detail(), watch)
+    store.finish_watch(rule, ["123"])
+    first = now
+    now = "2026-11-04T02:00:00+00:00"
+    store.save_posting(sample_post("456"), sample_detail(), watch)
+    collected = now
+    now = "2026-11-04T02:05:00+00:00"
+    alerts = store.finish_watch(rule, ["123", "456"])
+    assert alerts[0]["collected_at"] == collected
+    assert alerts[0]["created_at"] == now
+    now = "2026-11-04T03:00:00+00:00"
+    store.save_posting(sample_post("456"), sample_detail(), watch)
+    store.save_posting(sample_post(), sample_detail(), manual)
+    item = store.get_posting("123")
+    assert item["first_watch_collected_at"] == item["last_watch_collected_at"] == first
+    assert item["last_seen_at"] == now
+    item = store.get_posting("456")
+    assert item["first_watch_collected_at"] == collected
+    assert item["last_watch_collected_at"] == now
+    assert store.alerts()[0]["collected_at"] == collected
+    store.delete_watch(rule)
+    assert Store(store.path).get_posting("456")["last_watch_collected_at"] == now
+    assert store.alerts()[0]["collected_at"] == collected
+
+
+def test_v6_upgrade_preserves_postings_alerts_and_settings(tmp_path):
+    path = tmp_path / "v6.sqlite3"
+    store = Store(path)
+    run = store.start_run("manual", "AI", store.get_profile(), 1)
+    store.save_posting(sample_post(), sample_detail(), run)
+    rule = store.list_watches()[0]["id"]
+    store.finish_watch(rule, [])
+    store.finish_watch(rule, ["123"])
+    store.set_font_percent(140)
+    with store.connect() as con:
+        for name in ("favorite", "first_watch_collected_at", "last_watch_collected_at"):
+            con.execute(f"ALTER TABLE postings DROP COLUMN {name}")
+        con.execute("ALTER TABLE alerts DROP COLUMN collected_at")
+        con.execute("DELETE FROM app_settings WHERE key='sidebar_collapsed'")
+        con.execute("DELETE FROM schema_version WHERE version=7")
+        con.execute("PRAGMA user_version=6")
+    upgraded = Store(path)
+    assert upgraded.get_posting("123")["company"] == "테스트회사"
+    assert upgraded.get_posting("123")["favorite"] == 0
+    assert upgraded.get_posting("123")["last_watch_collected_at"] == ""
+    assert len(upgraded.alerts()) == 1 and upgraded.alerts()[0]["collected_at"] == ""
+    assert upgraded.get_font_percent() == 140
+    assert not upgraded.get_sidebar_collapsed()
+    upgraded.set_sidebar_collapsed(True)
+    assert Store(path).get_sidebar_collapsed()
+    with pytest.raises(ValueError):
+        upgraded.set_sidebar_collapsed(1)
+
+
+def test_theme_setting_defaults_and_persists_without_changing_archive(tmp_path):
+    path = tmp_path / "theme.sqlite3"
+    store = Store(path)
+    run = store.start_run("manual", "AI", store.get_profile(), 1)
+    store.save_posting(sample_post(), sample_detail(), run)
+    store.set_favorite("123", True)
+    store.set_font_percent(140)
+    store.set_sidebar_collapsed(True)
+    profile, watches = store.get_profile(), store.list_watches()
+    assert store.get_theme() == "light"
+    assert store.set_theme("dark") == "dark"
+    reopened = Store(path)
+    assert reopened.get_theme() == "dark"
+    assert reopened.get_font_percent() == 140 and reopened.get_sidebar_collapsed()
+    assert reopened.get_posting("123")["favorite"] == 1
+    assert reopened.get_profile() == profile and reopened.list_watches() == watches
+    with reopened.connect() as con:
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+    for invalid in (None, True, 1, {}, "system", "LIGHT"):
+        with pytest.raises(ValueError):
+            reopened.set_theme(invalid)
+        assert reopened.get_theme() == "dark"
+    assert reopened.set_theme("light") == "light"
+    with reopened.connect() as con:
+        con.execute("UPDATE app_settings SET value='unknown' WHERE key='theme'")
+    assert Store(path).get_theme() == "light"
+
+
+def test_theme_bridge_settings_round_trip(tmp_path):
+    pytest.importorskip("PySide6")
+    import json
+    from PySide6.QtCore import QCoreApplication
+    from saramin_finder.ui.bridge import Bridge
+    app = QCoreApplication.instance() or QCoreApplication([])
+    bridge = Bridge(Store(tmp_path / "theme-bridge.sqlite3"))
+    bridge.timer.stop()
+    assert json.loads(bridge.request("settings", "{}"))["data"]["theme"] == "light"
+    assert json.loads(bridge.request("set_theme", '{"theme":"dark"}')) == {
+        "ok": True, "data": {"theme": "dark"}}
+    assert json.loads(bridge.request("settings", "{}"))["data"]["theme"] == "dark"
+    assert not json.loads(bridge.request("set_theme", '{"theme":"invalid"}'))["ok"]
+    assert app is not None

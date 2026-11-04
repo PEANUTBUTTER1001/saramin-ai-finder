@@ -217,6 +217,8 @@ fabric.properties
 .omc
 
 ### Desktop Python ###
+/outputs/
+/progress/
 desktop/.deps/
 desktop/.cache/
 desktop/dist/
