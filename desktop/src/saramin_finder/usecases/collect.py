@@ -32,6 +32,7 @@ class CollectResult:
     closed_count: int | None = None
     error: str = ""
     provider: str = "saramin"
+    listing_complete: bool = True
 
     def summary(self) -> dict[str, str]:
         status_label = {"success": "완료", "partial": "일부 완료", "failed": "실패"}[self.status]
@@ -39,11 +40,11 @@ class CollectResult:
         if self.status == "failed":
             message = f"목록 확인 실패 · {self.error or '오류 내용을 확인해 주세요.'}"
         elif self.discovered_count is None:
-            prefix = (f"비교 기준 등록 {len(self.posting_ids)}건" if self.status == "success" else
-                      "일부 확인 실패 · 비교 지표 미확인")
+            prefix = (f"목록 확인 완료 · 비교 기준 등록 {len(self.posting_ids)}건" if self.listing_complete else
+                      "목록 확인 중단 · 비교 지표 미확인")
             message = f"{prefix} · DB 첫 저장 {self.new_count}건 · 상세 실패 {self.failed_count}건"
         else:
-            message = (f"새로 발견 {self.discovered_count}건 (등록일로 신규 확인 {self.registered_count}건)"
+            message = (f"목록 확인 완료 · 새로 발견 {self.discovered_count}건 (등록일로 신규 확인 {self.registered_count}건)"
                        f" · 실제 수정 {self.changed_count}건 · 이번 검색 미검출 {self.missing_count}건"
                        f" (원본 종료 확인 {self.closed_count}건) · 상세 실패 {self.failed_count}건")
         return {"title": title, "message": message}
@@ -57,11 +58,11 @@ def snapshot(item: dict) -> dict:
     return {key: item[key] for key in (*LIST_FIELDS, "full_text", "detail_status")}
 
 
-def changed(before: dict, after: dict, detail_ok: bool) -> bool:
-    return any(before["values"][key] != after["values"][key] for key in LIST_FIELDS) or (
-        before["detail_ok"] and detail_ok and
-        any(before["values"][key] != after["values"][key]
-            for key in ("full_text", "detail_status")))
+def changed(before: dict, current: dict, detail_ok: bool) -> bool:
+    previous = before["values"]
+    return any(previous[key] != current[key] for key in LIST_FIELDS) or (
+        before["detail_ok"] and detail_ok and previous["detail_status"] == "complete"
+        and bool(previous["full_text"]) and previous["full_text"] != current["full_text"])
 
 
 class Collector:
@@ -114,14 +115,14 @@ class Collector:
                     if progress:
                         progress({"stage": "detail", "count": len(seen),
                                   "message": f"상세 확인: {posting.company} · {posting.title}"})
-                    detail = client.detail(posting.rec_idx)
+                    detail = client.detail(posting)
                     if detail.status == "failed":
                         result.failed_count += 1
                     is_new = self.store.save_posting(posting, detail, run_id)
                     result.new_count += int(is_new)
                     result.updated_count += int(not is_new)
                     current = snapshot(self.store.get_posting(posting.rec_idx))
-                    detail_ok = detail.status != "failed"
+                    detail_ok = detail.status == "complete" and bool(detail.full_text)
                     self.store.record_snapshot(run_id, posting.rec_idx, current, detail_ok)
                     if baseline:
                         if posting.rec_idx not in previous:
@@ -130,8 +131,7 @@ class Collector:
                                 timezone(timedelta(hours=9))).date().isoformat()
                             if posting.posted_date and posting.posted_date > previous_day:
                                 events["registered"].add(posting.rec_idx)
-                        elif changed(previous[posting.rec_idx],
-                                     {"values": current, "detail_ok": detail_ok}, detail_ok):
+                        elif changed(previous[posting.rec_idx], current, detail_ok):
                             events["changed"].add(posting.rec_idx)
                 if not has_more:
                     break
@@ -141,6 +141,7 @@ class Collector:
         except Exception as exc:
             result.error = f"예기치 않은 수집 오류: {exc}"
             complete_listing = False
+        result.listing_complete = complete_listing
         result.status = ("partial" if result.failed_count else "success") if complete_listing else (
             "partial" if result.posting_ids else "failed")
         if baseline and complete_listing:
@@ -148,7 +149,7 @@ class Collector:
             for posting_id in events["missing"]:
                 if progress:
                     progress({"stage": "closure", "message": f"원본 종료 여부 확인: {posting_id}"})
-                if client.is_closed(posting_id):
+                if client.is_closed(posting_id, previous[posting_id]["url"]):
                     events["closed"].add(posting_id)
             self.store.record_events(run_id, events)
             for kind, attribute in (("discovered", "discovered_count"),
@@ -167,7 +168,7 @@ class Collector:
         metrics = {key: getattr(result, key) for key in ("baseline_run_id", "discovered_count",
                    "registered_count", "changed_count", "missing_count", "closed_count")}
         self.store.finish_run(run_id, result.status, result.new_count, result.updated_count,
-                              result.failed_count, result.error, metrics)
+                              result.failed_count, result.error, metrics, listing_complete=complete_listing)
         if progress:
             progress({"stage": "done", "result": result.__dict__,
                       "message": result.summary()["message"]})
