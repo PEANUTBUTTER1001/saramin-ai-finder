@@ -1,0 +1,14 @@
+name: CD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Verify and package apps
+    uses: ./.github/workflows/ci.yml
+    with:
+      upload_artifacts: true
