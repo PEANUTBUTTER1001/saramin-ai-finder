@@ -5,6 +5,14 @@ import re
 from saramin_finder.domain.models import SearchProfile
 
 
+GAMEJOB_POSTING_URL = "https://www.gamejob.co.kr/Recruit/GI_Read/View"
+
+
+def gamejob_posting_id(url: str) -> str | None:
+    match = re.fullmatch(rf"{re.escape(GAMEJOB_POSTING_URL)}\?GI_No=([0-9]+)", url)
+    return match[1] if match else None
+
+
 REGION_OPTIONS = (
     ("101000", "서울 전체"), ("102000", "경기 전체"),
     ("108000", "인천 전체"), ("103000", "광주 전체"),

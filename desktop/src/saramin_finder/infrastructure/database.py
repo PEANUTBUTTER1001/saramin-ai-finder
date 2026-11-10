@@ -315,15 +315,17 @@ class Store:
             return cur.lastrowid
 
     def finish_run(self, run_id: int, status: str, new_count: int, updated_count: int,
-                   failed_count: int, error: str = "", metrics: dict | None = None):
+                   failed_count: int, error: str = "", metrics: dict | None = None, *,
+                   listing_complete: bool | None = None):
         metrics = metrics or {}
+        comparison_ready = status == "success" if listing_complete is None else listing_complete
         with self.connect() as con:
             con.execute("""UPDATE crawl_runs SET status=?, finished_at=?, new_count=?,
                        updated_count=?, failed_count=?, error=?, comparison_ready=?,
                        baseline_run_id=?, discovered_count=?, registered_count=?,
                        changed_count=?, missing_count=?, closed_count=? WHERE id=?""",
                         (status, utc_now(), new_count, updated_count, failed_count, error[:2000],
-                         int(status == "success"), metrics.get("baseline_run_id"),
+                          int(comparison_ready), metrics.get("baseline_run_id"),
                          metrics.get("discovered_count"), metrics.get("registered_count"),
                          metrics.get("changed_count"), metrics.get("missing_count"),
                          metrics.get("closed_count"), run_id))
@@ -333,7 +335,7 @@ class Store:
         snapshot = json.dumps(profile.criteria(), ensure_ascii=False)
         with self.connect() as con:
             rows = con.execute("""SELECT id,query,finished_at FROM crawl_runs
-                WHERE status='success' AND comparison_ready=1 AND profile_snapshot=?
+                WHERE status IN ('success', 'partial') AND comparison_ready=1 AND profile_snapshot=?
                    AND page_limit=? AND provider=? ORDER BY id DESC""", (snapshot, pages, provider))
             return next((dict(row) for row in rows
                          if normalize_query(row["query"]) == normalize_query(query)), None)
@@ -341,9 +343,10 @@ class Store:
     def run_snapshots(self, run_id: int) -> dict[str, dict]:
         with self.connect() as con:
             return {row["posting_id"]: {"values": json.loads(row["snapshot_json"]),
-                                        "detail_ok": bool(row["detail_ok"])}
-                    for row in con.execute("""SELECT posting_id,snapshot_json,detail_ok
-                        FROM crawl_run_postings WHERE run_id=? AND snapshot_json<>''""", (run_id,))}
+                                        "detail_ok": bool(row["detail_ok"]), "url": row["url"]}
+                    for row in con.execute("""SELECT crp.posting_id,crp.snapshot_json,crp.detail_ok,p.url
+                        FROM crawl_run_postings crp JOIN postings p ON p.rec_idx=crp.posting_id
+                        WHERE crp.run_id=? AND crp.snapshot_json<>''""", (run_id,))}
 
     def record_snapshot(self, run_id: int, posting_id: str, values: dict, detail_ok: bool):
         with self.connect() as con:

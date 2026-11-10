@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QFileDialog
 
 from saramin_finder.infrastructure.database import Store
 from saramin_finder.domain.models import PROVIDERS, SearchProfile
-from saramin_finder.domain.rules import REGION_OPTIONS, validate_profile
+from saramin_finder.domain.rules import REGION_OPTIONS, gamejob_posting_id, validate_profile
 from saramin_finder.infrastructure.csv_export import write_csv
 from saramin_finder.usecases.analyze import export_posting_rows, export_rows
 from saramin_finder.usecases.collect import Collector
@@ -222,10 +222,12 @@ class Bridge(QObject):
         if action == "set_font_percent":
             return {"font_percent": self.store.set_font_percent(data["font_percent"])}
         if action == "open_url":
-            target = urlparse(str(data["url"]))
-            if target.scheme != "https" or target.netloc not in ("www.saramin.co.kr", "www.jobkorea.co.kr"):
-                raise ValueError("사람인·잡코리아 원본 공고 주소만 열 수 있습니다.")
-            return {"opened": QDesktopServices.openUrl(QUrl(data["url"]))}
+            url = str(data["url"])
+            target = urlparse(url)
+            native_posting = target.scheme == "https" and target.netloc in ("www.saramin.co.kr", "www.jobkorea.co.kr")
+            if not native_posting and gamejob_posting_id(url) is None:
+                raise ValueError("사람인·잡코리아 또는 연동된 게임잡 공고 주소를 열 수 있습니다.")
+            return {"opened": QDesktopServices.openUrl(QUrl(url))}
         if action == "watches":
             return [{**rule, "active": rule["id"] in self.active_watches}
                     for rule in self.store.list_watches()]

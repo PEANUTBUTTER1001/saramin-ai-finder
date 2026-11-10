@@ -76,6 +76,7 @@ def main():
         store.set_favorite("999021", False)
         store.toggle_watch(rule, False)
     if view == "workbench":
+        from PySide6.QtGui import QDesktopServices
         from PySide6.QtWidgets import QFileDialog
         QFileDialog.getSaveFileName = staticmethod(lambda *_args, **_kwargs:
             (str(root / "workbench-export.csv"), "CSV 파일 (*.csv)"))
@@ -99,11 +100,16 @@ def main():
         store.finish_watch(rule, [])
         store.finish_watch(rule, ["999031", "999032", "999033"])
         store.toggle_watch(rule, False)
-        jobkorea_run = store.start_run("manual", "AI", store.get_profile(), 1, provider="jobkorea")
+        gamejob_url = "https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=999031"
+        QDesktopServices.openUrl = staticmethod(lambda url: url.toString() == gamejob_url)
+        jobkorea_run = store.start_run("manual", "목록 완료 검증", store.get_profile(), 1, provider="jobkorea")
         store.save_posting(Posting("jobkorea:999031", "잡코리아 검증회사", "AI 분석 개발자",
-            "https://www.jobkorea.co.kr/Recruit/GI_Read/999031", "AI·데이터",
+            gamejob_url, "AI·데이터",
             provider="jobkorea"), Detail(status="complete", sections={"qualification": "Python 개발"},
             section_status={"qualification": "extracted"}), jobkorea_run)
+        store.finish_run(jobkorea_run, "partial", 1, 0, 1, listing_complete=True)
+        interrupted = store.start_run("manual", "목록 중단 검증", store.get_profile(), 1, provider="jobkorea")
+        store.finish_run(interrupted, "partial", 1, 0, 0, "목록 응답 오류", listing_complete=False)
     if view == "watch" and not store.list_watches():
         rule = store.add_watch("AI", 60)
         store.toggle_watch(rule, False)
@@ -269,7 +275,16 @@ def main():
                         check(document.querySelectorAll('#exploreRows tr').length===1 && document.querySelector('#exploreRows [data-detail]').dataset.detail==='jobkorea:999031','archive provider filter');
                         await openDetail('jobkorea:999031');
                         check(document.getElementById('detailSubtitle').textContent.includes('잡코리아 · 공고 ID 999031'),'detail provider or original ID missing');
+                        const gamejobUrl=document.querySelector('#detailContent [data-open-url]').dataset.openUrl;
+                        check((await call('open_url',{url:gamejobUrl})).opened,'gamejob posting link not accepted');
                         document.getElementById('closeDetail').click();
+                        go('crawl');await renderRuns();
+                        const runLogs=[...document.querySelectorAll('#crawlLog > div')].map(row=>row.textContent);
+                        const complete=runLogs.find(text=>text.includes('목록 완료 검증'));
+                        const interrupted=runLogs.find(text=>text.includes('목록 중단 검증'));
+                        check(complete?.includes('목록 확인 완료') && complete.includes('상세 실패 1') &&
+                              complete.includes('다음 목록 비교 기준으로 등록'),'completed list with failed detail mislabeled');
+                        check(interrupted?.includes('목록 확인 중단') && interrupted.includes('비교 기준 미등록'),'interrupted list mislabeled');
                         go('analysis');document.getElementById('analysisProvider').value='jobkorea';await renderAnalysis();
                         check(document.getElementById('analysisCount').textContent==='1' && document.getElementById('analysisRows').textContent.includes('잡코리아'),'analysis provider filter');
                         document.getElementById('analysisClearFilters').click();

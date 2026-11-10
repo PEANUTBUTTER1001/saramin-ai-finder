@@ -253,15 +253,18 @@ async function renderAnalysis() {
 }
 async function renderRuns() {
   const runs = await safe('runs'); if (!runs) return;
-  $('crawlLog').innerHTML = runs.length ? runs.map(run => `<div class="${run.status === 'failed' ? 'bad' : 'ok'}">
-    <time>${esc(stamp(run.started_at))}</time>${providerName(run.provider)} · ${esc(run.query)} · ${esc(run.status)}<br>
-    DB 첫 저장 ${run.new_count} · 기존 ID 재확인 ${run.updated_count} · 상세 실패 ${run.failed_count}<br>
-    ${run.discovered_count == null ? (run.status === 'success' ?
-      '비교 기준 없음 · 이번 성공 작업부터 기준 저장' : '비교 지표 미확인 · 성공 작업만 기준으로 사용') :
-      `새로 발견 ${run.discovered_count} (등록일로 신규 확인 ${run.registered_count}) · 실제 수정 ${run.changed_count}<br>이번 검색 미검출 ${run.missing_count} (원본 종료 확인 ${run.closed_count})`}
-    ${run.error ? ' · ' + esc(run.error) : ''}
-    ${run.discovered_count == null ? '' : `<button class="run-events-button" data-run-events="${run.id}">공고별 변화 보기</button><div id="run-events-${run.id}"></div>`}</div>`).join('')
-    : '<div>아직 수집 이력이 없습니다.</div>';
+  const statuses = {success:'목록 확인 완료', partial:'일부 완료', failed:'목록 확인 중단', running:'확인 중'};
+  $('crawlLog').innerHTML = runs.length ? runs.map(run => {
+    const status = run.comparison_ready ? statuses.success : run.error ? statuses.failed : statuses[run.status];
+    const baseline = run.comparison_ready ? '다음 목록 비교 기준으로 등록' : '비교 기준 미등록';
+    return `<div class="${run.status === 'failed' ? 'bad' : 'ok'}">
+      <time>${esc(stamp(run.started_at))}</time>${providerName(run.provider)} · ${esc(run.query)} · ${esc(status)}<br>
+      DB 첫 저장 ${run.new_count} · 기존 ID 재확인 ${run.updated_count} · 상세 실패 ${run.failed_count}<br>
+      ${run.discovered_count == null ? baseline :
+        `새로 발견 ${run.discovered_count} (등록일로 신규 확인 ${run.registered_count}) · 실제 수정 ${run.changed_count}<br>이번 검색 미검출 ${run.missing_count} (원본 종료 확인 ${run.closed_count})`}
+      ${run.error ? ' · ' + esc(run.error) : ''}
+      ${run.discovered_count == null ? '' : `<button class="run-events-button" data-run-events="${run.id}">공고별 변화 보기</button><div id="run-events-${run.id}"></div>`}</div>`;
+  }).join('') : '<div>아직 수집 이력이 없습니다.</div>';
 }
 async function showRunEvents(id) {
   const target = $(`run-events-${id}`);
@@ -365,7 +368,7 @@ async function renderWatches() {
     <time>감시 수집 ${esc(alert.collected_at ? stamp(alert.collected_at) : '미기록')}<br>알림 생성 ${esc(stamp(alert.created_at))}</time></div><div class="alert-actions">
     <button class="table-action" type="button" data-detail="${esc(alert.posting_id)}">상세 →</button>
     <button class="table-action" type="button" data-open-url="${esc(alert.url)}">브라우저에서 열기 →</button></div></div>`).join('')
-    : '<div class="watch-empty"><strong>새 공고 알림이 없습니다</strong>첫 성공 확인은 기준 목록을 만듭니다.</div>';
+    : '<div class="watch-empty"><strong>새 공고 알림이 없습니다</strong>목록 확인을 처음 마치면 감시 기준을 등록합니다.</div>';
 }
 function watchDue(rule) {
   if (!rule.active) return '감시 시작 대기';

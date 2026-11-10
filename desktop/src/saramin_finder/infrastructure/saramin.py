@@ -168,15 +168,17 @@ class HtmlClient:
         self.delay_range = delay_range
         self._requested = False
 
-    def _get(self, url: str, params: dict[str, str]) -> str:
+    def _get(self, url: str, params: dict[str, str], *, allow_redirects: bool = True) -> str:
         last_error: Exception | None = None
         for attempt in range(2):
             if self._requested:
                 time.sleep(random.uniform(*self.delay_range))
             self._requested = True
             try:
-                response = self.session.get(url, params=params, timeout=12)
+                response = self.session.get(url, params=params, timeout=12, allow_redirects=allow_redirects)
                 response.raise_for_status()
+                if not allow_redirects and 300 <= response.status_code < 400:
+                    raise CrawlError("예상하지 않은 이동 응답입니다.")
                 if re.search(r"HTTP_BAD_REQUEST\.php|captcha", response.text, re.IGNORECASE):
                     raise CrawlError("사이트가 요청을 거부했습니다.")
                 return response.text
@@ -192,13 +194,13 @@ class SaraminClient(HtmlClient):
         postings, raw_count = parse_list(self._get(SEARCH_URL, search_params(query, profile, page)), query, profile)
         return postings, raw_count >= 40
 
-    def detail(self, rec_idx: str) -> Detail:
+    def detail(self, posting: Posting) -> Detail:
         try:
-            return parse_detail(self._get(DETAIL_URL, {"rec_idx": rec_idx}))
+            return parse_detail(self._get(DETAIL_URL, {"rec_idx": posting.rec_idx}))
         except CrawlError:
             return Detail(status="failed")
 
-    def is_closed(self, rec_idx: str) -> bool:
+    def is_closed(self, rec_idx: str, _url: str) -> bool:
         try:
             return explicit_closure(self._get(ORIGINAL_URL, {"rec_idx": rec_idx}))
         except CrawlError:

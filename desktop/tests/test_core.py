@@ -265,7 +265,7 @@ def test_collector_persists_and_watch_uses_registration_sort(tmp_path):
             profiles.append(profile)
             return [sample_post()], False
 
-        def detail(self, rec_idx):
+        def detail(self, _posting):
             return sample_detail()
 
     collector = Collector(store, FakeClient)
@@ -288,7 +288,7 @@ def test_manual_criteria_are_used_and_snapshotted_without_changing_watch(tmp_pat
             used.append(profile)
             return [sample_post()], False
 
-        def detail(self, _rec_idx):
+        def detail(self, _posting):
             return sample_detail()
 
     custom = replace(store.get_profile(), location_codes=("102000",),
@@ -365,7 +365,7 @@ def test_collector_watch_baseline_then_new_post_and_history(tmp_path):
                 jobs.append(sample_post("456"))
             return jobs, False
 
-        def detail(self, _rec_idx):
+        def detail(self, _posting):
             return sample_detail()
 
     collector = Collector(store, FakeClient)
@@ -519,13 +519,13 @@ def test_run_comparison_separates_discovery_registration_change_and_closure(tmp_
                         replace(sample_post("4"), posted_date=next_day)]
             return jobs, False
 
-        def detail(self, rec_idx):
+        def detail(self, posting):
             detail = sample_detail()
-            if rec_idx == "2" and phase["number"] >= 2:
+            if posting.rec_idx == "2" and phase["number"] >= 2:
                 return replace(detail, full_text=detail.full_text + "\n수정된 상세 문구")
             return detail
 
-        def is_closed(self, rec_idx):
+        def is_closed(self, rec_idx, _url):
             phase["closed_checks"].append(rec_idx)
             return rec_idx == "3"
 
@@ -555,10 +555,10 @@ def test_failed_listing_cannot_claim_missing_or_closed(tmp_path):
                 return ([sample_post("1")], False) if phase["number"] == 1 else ([sample_post("2")], True)
             raise CrawlError("목록 차단")
 
-        def detail(self, _rec_idx):
+        def detail(self, _posting):
             return sample_detail()
 
-        def is_closed(self, _rec_idx):
+        def is_closed(self, _rec_idx, _url):
             phase["closed"] += 1
             return True
 
@@ -566,8 +566,64 @@ def test_failed_listing_cannot_claim_missing_or_closed(tmp_path):
     assert collector.run("AI", 3).status == "success"
     partial = collector.run("AI", 3)
     assert partial.status == "partial"
+    assert not partial.listing_complete
+    assert "목록 확인 중단" in partial.summary()["message"]
     assert partial.missing_count is None and partial.closed_count is None
     assert store.run_events(partial.run_id) == [] and phase["closed"] == 0
+    assert store.comparable_run("AI", store.get_profile(), 3)["id"] != partial.run_id
+
+
+def test_complete_list_becomes_watch_comparison_baseline_despite_detail_failure(tmp_path):
+    store = Store(tmp_path / "list-baseline.sqlite3")
+    rule_id = store.list_watches()[0]["id"]
+    initial = sample_post("1")
+    followup = sample_post("2")
+    jobs = [initial]
+    details = {"1": Detail(status="failed"), "2": sample_detail()}
+
+    class FakeClient:
+        def search(self, *_args):
+            return jobs, False
+
+        def detail(self, posting):
+            return details[posting.rec_idx]
+
+    collector = Collector(store, FakeClient)
+    first = collector.run("AI", 1, rule_id)
+    assert first.status == "partial" and first.listing_complete and first.failed_count == 1
+    assert "목록 확인 완료 · 비교 기준 등록 1건" in first.summary()["message"]
+    assert store.recent_runs(1)[0]["comparison_ready"] == 1
+    assert store.get_watch(rule_id)["baseline_ready"] == 1 and first.alerts == []
+
+    jobs.append(followup)
+    details["1"] = sample_detail()
+    second = collector.run("AI", 1, rule_id)
+    assert second.baseline_run_id == first.run_id and second.discovered_count == 1
+    assert second.changed_count == 0
+    assert [alert["posting_id"] for alert in second.alerts] == ["2"]
+
+    jobs[0] = replace(initial, title="AI 개발자 (수정)")
+    details["1"] = Detail(status="failed")
+    third = collector.run("AI", 1, rule_id)
+    assert third.status == "partial" and third.changed_count == 1
+    assert third.alerts == []
+    assert store.get_posting("1")["full_text"] == sample_detail().full_text
+
+
+def test_valid_empty_list_is_saved_as_comparison_baseline(tmp_path):
+    store = Store(tmp_path / "empty.sqlite3")
+
+    class EmptyClient:
+        def search(self, *_args):
+            return [], False
+
+    collector = Collector(store, EmptyClient)
+    first = collector.run("AI", 1)
+    second = collector.run("AI", 1)
+    assert first.status == "success" and first.listing_complete
+    assert "비교 기준 등록 0건" in first.summary()["message"]
+    assert second.baseline_run_id == first.run_id
+    assert (second.discovered_count, second.missing_count) == (0, 0)
 
 
 def test_v4_history_preserved_and_does_not_count_as_comparison(tmp_path):
@@ -748,7 +804,7 @@ def test_jobkorea_migration_keeps_old_ids_and_separates_matching_queries(tmp_pat
         def search(self, *_args):
             return [saramin], False
 
-        def detail(self, _id):
+        def detail(self, _posting):
             return detail
 
     saramin_first = Collector(store, SaraminFixture).run("AI", 1, saramin_watch)
