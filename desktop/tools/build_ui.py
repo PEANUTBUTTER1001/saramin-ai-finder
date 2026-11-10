@@ -9,7 +9,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 source = (root / "outputs" / "saramin-desktop-prototype.html").read_text(encoding="utf-8")
 page = source.split("  <script>", 1)[0]
-page = page.replace("Saramin AI Finder — PC 앱 프로토타입", "Saramin Finder — PC 공고 관리")
+page = page.replace("Saramin AI Finder — PC 앱 프로토타입", "Job Finder")
 page = page.replace('<span class="demo-pill">샘플 데이터 · 프로토타입</span>',
                     '<span class="demo-pill">실제 로컬 데이터</span>')
 page = page.replace('PC 로컬 저장 구상', 'PC 로컬 누적 저장')
@@ -133,7 +133,8 @@ page = page.replace('    <symbol id="i-grid"', '''    <symbol id="i-inbox" viewB
 page = page.replace('<aside class="sidebar" aria-label="주 메뉴">', '<aside class="sidebar" id="sidebar" aria-label="주 메뉴">', 1)
 page = page.replace('      <div class="nav-label">Workspace</div>\n', '', 1)
 page = page.replace('<strong>Saramin Finder</strong><small>DESKTOP WORKSPACE</small>',
-                    '<strong>Saramin</strong><strong>Finder</strong>', 1)
+                    '<strong>Job</strong><strong>Finder</strong>', 1)
+page = page.replace('<div class="brand-mark">S</div>', '<div class="brand-mark">J</div>', 1)
 page = page.replace('      <div class="sidebar-bottom"><strong>로컬 데이터 보관</strong><p>검색 결과를 누적 보관하고<br>필드와 상세 텍스트로 다시 찾습니다.</p></div>\n', '', 1)
 page = page.replace('<button class="nav-btn" data-view="analysis">', '''<button class="nav-btn" data-view="favorites"><svg class="nav-icon"><use href="#i-star" fill="none"/></svg><span>즐겨찾기</span></button>
         <button class="nav-btn" data-view="analysis">''', 1)

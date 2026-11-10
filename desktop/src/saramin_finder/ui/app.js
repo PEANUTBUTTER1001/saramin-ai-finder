@@ -14,6 +14,8 @@ let runningWatchId = null;
 let toastTimer;
 
 const $ = id => document.getElementById(id);
+const providerName = provider => provider === 'jobkorea' ? '잡코리아' : '사람인';
+const postingNumber = id => String(id).split(':').pop();
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp = value => value ? new Date(value).toLocaleString('ko-KR') : '—';
@@ -122,7 +124,7 @@ function collectionStamp(value, label = '') {
 function postingRows(items, offset) {
   return items.map((item, index) => `<tr><td class="favorite-cell">${favoriteButton(item.rec_idx, item.favorite)}</td>
     <td class="posting-number">${offset + index + 1}</td>
-    <td><span class="job-name">${esc(item.title)}</span><span class="company-name">${esc(item.company)} · ID ${esc(item.rec_idx)}</span></td>
+    <td><span class="job-name">${esc(item.title)}</span><span class="company-name">${esc(item.company)} · ${providerName(item.provider)} · ID ${esc(postingNumber(item.rec_idx))}</span></td>
     <td>${esc(item.sector)}</td><td><span class="date-cell">${esc(item.career)}</span><br><span class="company-name">${esc(item.education)}</span></td>
     <td class="date-cell">${esc(item.posted_date || '미확인')}${!item.posted_date && item.updated_date ? `<br><span class="company-name">수정 ${esc(item.updated_date)}</span>` : ''}</td>
     <td class="date-cell">${esc(item.deadline_date || item.deadline || '미확인')}<br><span class="company-name">${esc(dday(item.deadline_date))}</span></td>
@@ -155,10 +157,10 @@ async function renderOverview() {
   ).join('') : '<div class="empty">저장된 공고가 없습니다.</div>';
   const run = stats.last_run;
   $('latestState').textContent = run ? ({success:'최근 수집 완료',partial:'일부 수집',failed:'수집 실패'}[run.status] || '수집 중') : '수집 대기 중';
-  $('latestSummary').textContent = run ? `“${run.query}” · 신규 ${run.new_count}건, 갱신 ${run.updated_count}건, 상세 실패 ${run.failed_count}건` : '수집 작업에서 첫 검색을 시작하세요.';
+  $('latestSummary').textContent = run ? `${providerName(run.provider)} · “${run.query}” · 신규 ${run.new_count}건, 갱신 ${run.updated_count}건, 상세 실패 ${run.failed_count}건` : '수집 작업에서 첫 검색을 시작하세요.';
   $('latestTime').textContent = run ? stamp(run.finished_at || run.started_at) : '—';
   $('recentRows').innerHTML = recent.items.slice(0, 5).map(item => `<tr>
-    <td><span class="job-name">${esc(item.title)}</span><span class="company-name">${esc(item.company)}</span></td>
+    <td><span class="job-name">${esc(item.title)}</span><span class="company-name">${esc(item.company)} · ${providerName(item.provider)}</span></td>
     <td>${esc(item.sector)}</td><td>${esc(item.career)}</td><td>${techTags(item.tech)}</td>
     <td class="date-cell">${shortStamp(item.last_seen_at)}</td><td><button class="table-action" data-detail="${esc(item.rec_idx)}">열기 →</button></td></tr>`).join('');
 }
@@ -205,7 +207,7 @@ async function saveFontPercent(percent) {
   if (saved) applyFontPercent(saved.font_percent);
 }
 function exploreFilters() {
-  const filters = {text:$('searchInput').value.trim(), company:$('companyFilter').value,
+  const filters = {text:$('searchInput').value.trim(), company:$('companyFilter').value,provider:$('exploreProvider').value,
     sector:multiValues('sectorFilter'),career:multiValues('careerFilter'),tech:multiValues('techFilter')};
   if (groupValue) filters[groupType === 'collected' ? 'date' : `group_${groupType}`] = groupValue;
   return filters;
@@ -213,7 +215,7 @@ function exploreFilters() {
 async function renderExplore() {
   const [result, groups] = await Promise.all([
     safe('postings', {filters:exploreFilters(),page:explorePage,sort:$('sortSelect').value}),
-    safe('groups', {kind:groupType === 'collected' ? 'date' : groupType})]);
+    safe('groups', {kind:groupType === 'collected' ? 'date' : groupType,provider:$('exploreProvider').value})]);
   if (!result || !groups) return;
   $('resultCount').textContent = result.total;
   $('resultCaption').textContent = groupValue ? `“${groupValue}” 분류 적용 중` : '저장된 공고를 조건별로 조회';
@@ -226,7 +228,7 @@ async function renderExplore() {
   $('exploreNext').disabled = explorePage * result.per_page >= result.total;
 }
 function analysisFilters() {
-  return {text:$('analysisText').value.trim(),company:$('analysisCompany').value,
+  return {text:$('analysisText').value.trim(),company:$('analysisCompany').value,provider:$('analysisProvider').value,
     sector:multiValues('analysisSector'),career:multiValues('analysisCareer'),
     tech:multiValues('analysisTech'),query:$('analysisQuery').value,date:$('analysisDate').value};
 }
@@ -237,7 +239,7 @@ async function renderAnalysis() {
   $('analysisCount').textContent = result.total;
   $('analysisPage').textContent = `${analysisPage}페이지`;
   $('analysisRows').innerHTML = result.items.length ? result.items.map(item => `<article class="analysis-row">
-    <strong>${esc(item.title)}</strong><small>${esc(item.company)} · ${esc(item.sector)} · ${esc(item.career)} · ${shortStamp(item.last_seen_at)}</small>
+    <strong>${esc(item.title)}</strong><small>${providerName(item.provider)} · ${esc(item.company)} · ${esc(item.sector)} · ${esc(item.career)} · ${shortStamp(item.last_seen_at)}</small>
     <p>${esc(item.text)}</p><div class="analysis-actions">
       <button class="table-action" type="button" data-detail="${esc(item.rec_idx)}">공고 전체 보기 →</button>
       <button class="table-action" type="button" data-open-url="${esc(item.url)}">브라우저에서 열기 →</button>
@@ -252,7 +254,7 @@ async function renderAnalysis() {
 async function renderRuns() {
   const runs = await safe('runs'); if (!runs) return;
   $('crawlLog').innerHTML = runs.length ? runs.map(run => `<div class="${run.status === 'failed' ? 'bad' : 'ok'}">
-    <time>${esc(stamp(run.started_at))}</time>${esc(run.query)} · ${esc(run.status)}<br>
+    <time>${esc(stamp(run.started_at))}</time>${providerName(run.provider)} · ${esc(run.query)} · ${esc(run.status)}<br>
     DB 첫 저장 ${run.new_count} · 기존 ID 재확인 ${run.updated_count} · 상세 실패 ${run.failed_count}<br>
     ${run.discovered_count == null ? (run.status === 'success' ?
       '비교 기준 없음 · 이번 성공 작업부터 기준 저장' : '비교 지표 미확인 · 성공 작업만 기준으로 사용') :
@@ -344,11 +346,12 @@ async function renderWatches() {
   if (!rules || !alerts) return;
   watchers = rules;
   $('watchCount').textContent = rules.length;
+  $('startAllWatches').disabled = !rules.some(rule => !rule.active);
   $('alertCount').textContent = alerts.length;
   $('sideAlertCount').textContent = alerts.length;
   $('sideAlertCount').hidden = alerts.length === 0;
   $('watchItems').innerHTML = rules.length ? rules.map(rule => `<article class="watch-item ${rule.active ? '' : 'paused'}">
-    <div class="watch-item-top"><div><h3>${esc(rule.query)}</h3><small>${rule.interval_minutes}분 간격 · ${esc(rule.last_result)}</small></div>
+    <div class="watch-item-top"><div><h3>${esc(rule.query)}</h3><small>${providerName(rule.provider)} · ${rule.interval_minutes}분 간격 · ${esc(rule.last_result)}</small></div>
     <span class="watch-status ${rule.active ? '' : 'paused'}">${rule.active ? (runningWatchId === rule.id ? '확인 중' : '감시 중') : '중지'}</span></div>
     <div class="watch-item-info"><span>마지막 성공 <b>${esc(stamp(rule.last_success_at))}</b></span>
     <span>다음 확인 <b data-watch-countdown="${rule.id}">${esc(watchDue(rule))}</b></span></div>
@@ -358,7 +361,7 @@ async function renderWatches() {
     <button class="btn small danger" data-watch-action="remove" data-watch-id="${rule.id}">삭제</button></div></article>`).join('')
     : '<div class="watch-empty"><strong>설정된 감시가 없습니다</strong>검색어와 간격을 입력해 추가하세요.</div>';
   $('alertList').innerHTML = alerts.length ? alerts.map(alert => `<div class="alert-item">${favoriteButton(alert.posting_id, alert.favorite)}<div class="alert-copy">
-    <strong>${esc(alert.title)}</strong><p>${esc(alert.company)} · 감시 검색어 “${esc(alert.query_snapshot)}”</p>
+    <strong>${esc(alert.title)}</strong><p>${providerName(alert.provider)} · ${esc(alert.company)} · 감시 검색어 “${esc(alert.query_snapshot)}”</p>
     <time>감시 수집 ${esc(alert.collected_at ? stamp(alert.collected_at) : '미기록')}<br>알림 생성 ${esc(stamp(alert.created_at))}</time></div><div class="alert-actions">
     <button class="table-action" type="button" data-detail="${esc(alert.posting_id)}">상세 →</button>
     <button class="table-action" type="button" data-open-url="${esc(alert.url)}">브라우저에서 열기 →</button></div></div>`).join('')
@@ -376,7 +379,7 @@ async function renderFields() {
     ['목록','공고 ID · 회사 · 제목','중복 제거와 공고 식별','rec_idx · company · title'],
     ['목록','분야 · 경력 · 학력','조건별 조회와 분류','sector · career · education'],
     ['날짜','공고등록일 · 수정일 · 채용마감일','공고등록일 및 남은 마감 기간 정렬','posted_date · updated_date · deadline_date'],
-    ['출처','사람인 공고 링크','원본 공고 열기','url'],
+    ['출처','공고 출처 · 원본 링크','사이트 구분 및 원본 공고 열기','provider · url'],
     ['상세','전체 상세 텍스트','추출 가능한 상세 원문 저장','full_text'],
     ['분석','자격요건 원문','우대사항과 분리된 검색·집계','qualification'],
     ['분석','우대사항 원문','자격요건과 분리된 검색·집계','preference'],
@@ -396,7 +399,7 @@ async function renderFields() {
 async function openDetail(id) {
   const item = await safe('posting', {id}); if (!item) return;
   $('detailTitle').textContent = item.title;
-  $('detailSubtitle').textContent = `${item.company} · 공고 ID ${item.rec_idx}`;
+  $('detailSubtitle').textContent = `${item.company} · ${providerName(item.provider)} · 공고 ID ${postingNumber(item.rec_idx)}`;
   const cells = [['직무 분야',item.sector],['경력 / 학력',`${item.career} / ${item.education}`],
     ['공고등록일',item.posted_date || '미확인'],['최종 수정일',item.updated_date || '미확인'],
     ['채용마감일',item.deadline_date ? `${item.deadline_date} · ${dday(item.deadline_date)}` : item.deadline || '미확인'],
@@ -419,21 +422,26 @@ async function startCrawl() {
   if (!query) { toast('검색어를 입력해 주세요.'); $('crawlQuery').focus(); return; }
   let criteria;
   try { criteria = criteriaFromForm('crawl'); } catch (error) { toast(error.message); return; }
-  await safe('collect', {query,pages:Number($('pageCount').value),criteria});
+  const provider = $('crawlProvider').value;
+  if (provider === 'jobkorea' && query.length > 30) { toast('잡코리아 검색어는 30자까지 입력할 수 있습니다.'); return; }
+  await safe('collect', {query,pages:Number($('pageCount').value),criteria,provider});
 }
 function resetWatchForm() {
   editingWatchId = null; $('watchForm').reset(); $('watchInterval').value = '60';
+  $('watchProvider').disabled = false;
   $('watchFormTitle').textContent = '감시 조건 추가'; $('saveWatch').textContent = '감시 추가';
   $('cancelWatchEdit').hidden = true; $('watchError').textContent = '';
 }
 async function saveWatch(event) {
   event.preventDefault();
   const query = $('watchQuery').value.trim(), interval = Number($('watchInterval').value);
+  const provider = $('watchProvider').value;
   try {
     if (!query || query.length > 40 || !Number.isSafeInteger(interval) || interval < 1) throw new Error('검색어와 1분 이상의 정수 간격을 입력해 주세요.');
-    await call(editingWatchId ? 'update_watch' : 'add_watch',
-      {id:editingWatchId,query,interval});
-    resetWatchForm(); await renderWatches(); toast('감시 조건을 저장했습니다.');
+    const result = await call(editingWatchId ? 'update_watch' : 'add_watch',
+      {id:editingWatchId,query,interval,provider});
+    resetWatchForm(); await renderWatches();
+    toast(provider === 'all' ? `감시 조건 ${result.added}개를 추가했습니다.` : '감시 조건을 저장했습니다.');
   } catch (error) { $('watchError').textContent = error.message; }
 }
 async function watchAction(button) {
@@ -442,6 +450,7 @@ async function watchAction(button) {
   const action = button.dataset.watchAction;
   if (action === 'edit') {
     editingWatchId = id; $('watchQuery').value = rule.query; $('watchInterval').value = rule.interval_minutes;
+    $('watchProvider').value = rule.provider; $('watchProvider').disabled = true;
     $('watchFormTitle').textContent = '감시 조건 수정'; $('saveWatch').textContent = '변경 저장';
     $('cancelWatchEdit').hidden = false; $('watchQuery').focus(); return;
   }
@@ -455,7 +464,7 @@ function handleEvent(raw) {
   if (name === 'started') {
     running = true; runningWatchId = payload.watch_rule_id; $('startCrawl').disabled = true;
     $('crawlStateTitle').textContent = '실제 수집 중';
-    $('crawlStateText').textContent = `“${payload.query}” 공고를 확인하고 있습니다.`;
+    $('crawlStateText').textContent = `${providerName(payload.provider)}에서 “${payload.query}” 공고를 확인하고 있습니다.`;
     $('progressFill').style.width = '0%'; $('progressPercent').textContent = '0%';
     renderWatches();
   }
@@ -537,7 +546,8 @@ $('exportPostings').addEventListener('click', async () => {
 });
 ['searchInput','companyFilter','sortSelect'].forEach(id =>
   $(id).addEventListener(id === 'searchInput' ? 'input' : 'change', () => {explorePage=1;renderExplore();}));
-['analysisKind','analysisText','analysisCompany','analysisQuery','analysisDate'].forEach(id =>
+$('exploreProvider').addEventListener('change', () => {explorePage=1;groupValue='';renderExplore();});
+['analysisKind','analysisText','analysisCompany','analysisQuery','analysisDate','analysisProvider'].forEach(id =>
   $(id).addEventListener(id === 'analysisText' ? 'input' : 'change', () => {analysisPage=1;renderAnalysis();}));
 for (const id of ['sectorFilter','careerFilter','techFilter','analysisSector','analysisCareer','analysisTech']) {
   $(id).addEventListener('change', event => {
@@ -549,12 +559,12 @@ for (const id of ['sectorFilter','careerFilter','techFilter','analysisSector','a
 }
 $('groupSelect').addEventListener('change', event => {groupType=event.target.value;groupValue='';renderExplore();});
 $('clearFilters').addEventListener('click', () => {
-  $('searchInput').value=''; $('companyFilter').value='';
+  $('searchInput').value=''; $('companyFilter').value=''; $('exploreProvider').value='';
   ['sectorFilter','careerFilter','techFilter'].forEach(clearMulti);
   groupValue='';explorePage=1;$('sortSelect').value='recent';renderExplore();
 });
 $('analysisClearFilters').addEventListener('click', () => {
-  $('analysisText').value=''; $('analysisCompany').value=''; $('analysisQuery').value=''; $('analysisDate').value='';
+  $('analysisText').value=''; $('analysisCompany').value=''; $('analysisQuery').value=''; $('analysisDate').value=''; $('analysisProvider').value='';
   ['analysisSector','analysisCareer','analysisTech'].forEach(clearMulti);
   analysisPage=1;renderAnalysis();
 });
@@ -567,6 +577,24 @@ $('resetCrawlCriteria').addEventListener('click', async () => {
   if (profile) { fillCriteriaForm('crawl', profile, regionOptions); toast('현재 감시 조건을 불러왔습니다.'); }
 });
 $('watchForm').addEventListener('submit', saveWatch);
+$('startAllWatches').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const result = await safe('start_all_watches');
+    if (result?.started) toast(`감시 조건 ${result.started}개의 감시를 시작했습니다.`);
+    await renderWatches();
+  } finally {
+    button.disabled = !watchers.some(rule => !rule.active);
+  }
+});
+$('crawlProvider').addEventListener('change', () => {
+  const jobkorea = $('crawlProvider').value === 'jobkorea';
+  $('crawlQuery').maxLength = jobkorea ? 30 : 40;
+  for (const option of $('pageCount').options) {
+    option.textContent = `${option.value}페이지 · 최대 ${Number(option.value) * (jobkorea ? 20 : 40)}건`;
+  }
+});
 $('profileForm').addEventListener('submit', saveProfile);
 for (const prefix of ['profile','crawl']) {
   $(`${prefix}Nationwide`).addEventListener('change', () => syncCriteriaForm(prefix));

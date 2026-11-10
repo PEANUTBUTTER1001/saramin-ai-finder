@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+PROVIDERS = {"saramin": "사람인", "jobkorea": "잡코리아"}
+
 
 @dataclass(frozen=True)
 class SearchProfile:
@@ -40,6 +42,7 @@ class Posting:
     posted_date: str = ""
     updated_date: str = ""
     deadline_date: str = ""
+    provider: str = "saramin"
 
 
 @dataclass(frozen=True)

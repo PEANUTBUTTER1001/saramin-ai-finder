@@ -40,7 +40,7 @@ def main():
             # A running app locks its DLLs; renaming fails before anything is deleted.
             stale = OUTPUT.rename(DIST_ROOT / "SaraminFinder.old")
         except OSError:
-            raise RuntimeError("사람인 공고 관리 앱을 종료한 뒤 다시 실행해 주세요.") from None
+            raise RuntimeError("Job Finder 앱을 종료한 뒤 다시 실행해 주세요.") from None
         shutil.rmtree(stale)
     runtime = OUTPUT / "runtime"
     vendor = OUTPUT / "vendor"
@@ -64,7 +64,7 @@ def main():
     shutil.copytree(DESKTOP / "font", OUTPUT / "font")
     shutil.copy2(DESKTOP / "packaging" / "실행.bat", OUTPUT / "실행.bat")
     (OUTPUT / "README.txt").write_text(
-        "사람인 공고 관리 PC 앱\n\n실행.bat를 더블클릭하세요. 실행 중 CMD 창은 남지 않습니다.\n"
+        "Job Finder\n\n실행.bat를 더블클릭하세요. 실행 중 CMD 창은 남지 않습니다.\n"
         "데이터와 로그: %LOCALAPPDATA%\\SaraminAIFinder\\\n"
         "Python 설치 및 pip 실행은 필요하지 않습니다.\n", encoding="utf-8")
     print(f"Portable app ready: {OUTPUT}", flush=True)

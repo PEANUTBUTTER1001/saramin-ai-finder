@@ -12,18 +12,23 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QStyle, QSystemTrayIcon
 
 from saramin_finder.infrastructure.database import Store
+from saramin_finder.infrastructure.jobkorea import JobKoreaClient
 from saramin_finder.ui.bridge import Bridge
+from saramin_finder.usecases.collect import Collector
+
+APP_NAME = "Job Finder"
 
 
 class AppWindow(QWebEngineView):
     def __init__(self, store: Store):
         super().__init__()
-        self.setWindowTitle("Saramin Finder · PC 공고 관리")
+        self.setWindowTitle(APP_NAME)
         self.resize(1280, 850)
         self.setMinimumSize(900, 620)
         icon = self.style().standardIcon(QStyle.SP_FileDialogDetailedView)
         self.setWindowIcon(icon)
         self.tray = QSystemTrayIcon(icon, self)
+        self.tray.setToolTip(APP_NAME)
         menu = QMenu()
         show_action = QAction("앱 열기", self)
         show_action.triggered.connect(self.showNormal)
@@ -34,7 +39,10 @@ class AppWindow(QWebEngineView):
         self.tray.setContextMenu(menu)
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray.show()
-        self.bridge = Bridge(store, self, self.notify)
+        self.bridge = Bridge(store, self, self.notify, collectors={
+            "saramin": Collector(store),
+            "jobkorea": Collector(store, JobKoreaClient, provider="jobkorea"),
+        })
         self.channel = QWebChannel(self.page())
         self.channel.registerObject("bridge", self.bridge)
         self.page().setWebChannel(self.channel)
@@ -67,6 +75,7 @@ def main() -> int:
     logging.basicConfig(filename=root / "desktop.log", level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8")
     app = QApplication(sys.argv)
+    app.setApplicationDisplayName(APP_NAME)
     try:
         store = Store(root / "jobs.sqlite3")
         window = AppWindow(store)
@@ -76,7 +85,7 @@ def main() -> int:
         return app.exec()
     except Exception as exc:
         logging.exception("Desktop startup failed")
-        QMessageBox.critical(None, "사람인 공고 관리 시작 오류", str(exc))
+        QMessageBox.critical(None, f"{APP_NAME} 시작 오류", str(exc))
         return 1
 
 

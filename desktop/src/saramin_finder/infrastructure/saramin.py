@@ -154,12 +154,14 @@ def explicit_closure(html: str) -> bool:
     return False
 
 
-class SaraminClient:
+class HtmlClient:
+    user_agent = USER_AGENT
+
     def __init__(self, session: requests.Session | None = None,
                  delay_range: tuple[float, float] = (0.5, 1.0)):
         self.session = session or requests.Session()
         self.session.headers.update({
-            "User-Agent": USER_AGENT,
+            "User-Agent": self.user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
         })
@@ -184,8 +186,11 @@ class SaraminClient:
                     time.sleep(1)
         raise CrawlError(f"요청 실패: {last_error}")
 
-    def search(self, query: str, profile: SearchProfile, page: int) -> tuple[list[Posting], int]:
-        return parse_list(self._get(SEARCH_URL, search_params(query, profile, page)), query, profile)
+
+class SaraminClient(HtmlClient):
+    def search(self, query: str, profile: SearchProfile, page: int) -> tuple[list[Posting], bool]:
+        postings, raw_count = parse_list(self._get(SEARCH_URL, search_params(query, profile, page)), query, profile)
+        return postings, raw_count >= 40
 
     def detail(self, rec_idx: str) -> Detail:
         try:
