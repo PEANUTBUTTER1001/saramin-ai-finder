@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      upload_artifacts:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android build and checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Ensure Android SDK packages
+        shell: bash
+        run: |
+          if [[ ! -f "$ANDROID_HOME/platforms/android-37.0/android.jar" || ! -x "$ANDROID_HOME/build-tools/36.0.0/aapt2" ]]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
+          fi
+      - name: Run unit tests, lint, and debug build
+        run: bash ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - name: Upload debug APK
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Saramin-Finder-Android-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  desktop:
+    name: Windows desktop checks
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install desktop test dependencies
+        run: python -m pip install -e "desktop[test]"
+      - name: Run desktop tests
+        run: python -m pytest -q --basetemp desktop/.pytest-tmp desktop/tests
+      - name: Check JavaScript syntax
+        run: node --check desktop/src/saramin_finder/ui/app.js
+      - name: Build Windows portable app
+        if: inputs.upload_artifacts
+        run: python desktop/packaging/build_portable.py
+      - name: Upload Windows portable app
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Job-Finder-Windows-x64
+          path: desktop/dist/SaraminFinder/
+          if-no-files-found: error
