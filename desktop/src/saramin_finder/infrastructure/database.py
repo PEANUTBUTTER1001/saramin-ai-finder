@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from saramin_finder.domain.models import Detail, Posting, SearchProfile
+from saramin_finder.domain.models import PROVIDERS, Detail, Posting, SearchProfile
 from saramin_finder.domain.rules import (keywords_in, normalize_query, sector_keywords, validate_interval,
                                          validate_profile, validate_query)
 
@@ -17,6 +18,14 @@ def utc_now() -> str:
 
 def after_minutes(minutes: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat(timespec="seconds")
+
+
+def watch_query_key(query: str, provider: str) -> str:
+    if provider not in PROVIDERS:
+        raise ValueError("수집 출처를 선택해 주세요.")
+    normalized = normalize_query(query)
+    # Normalized legacy queries never contain newlines, so existing keys stay valid.
+    return normalized if provider == "saramin" else f"{provider}\n{normalized}"
 
 
 class Store:
@@ -43,7 +52,7 @@ class Store:
         with self.connect() as con:
             con.execute("PRAGMA journal_mode=WAL")
             version = con.execute("PRAGMA user_version").fetchone()[0]
-            if version > 7:
+            if version > 8:
                 raise RuntimeError("이 앱보다 새로운 데이터베이스입니다. 기존 파일을 변경하지 않았습니다.")
             if version == 0:
                 con.executescript("""BEGIN IMMEDIATE;
@@ -209,6 +218,15 @@ class Store:
                 con.execute("INSERT OR IGNORE INTO app_settings VALUES ('sidebar_collapsed','0')")
                 con.execute("INSERT OR IGNORE INTO schema_version VALUES (?,?)", (7, utc_now()))
                 con.execute("PRAGMA user_version=7")
+            if version <= 7:
+                if not con.in_transaction:
+                    con.execute("BEGIN IMMEDIATE")
+                for table in ("postings", "crawl_runs", "watch_rules"):
+                    columns = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+                    if columns and "provider" not in columns:
+                        con.execute(f"ALTER TABLE {table} ADD COLUMN provider TEXT NOT NULL DEFAULT 'saramin'")
+                con.execute("INSERT OR IGNORE INTO schema_version VALUES (?,?)", (8, utc_now()))
+                con.execute("PRAGMA user_version=8")
 
     def get_theme(self) -> str:
         with self.connect() as con:
@@ -286,13 +304,13 @@ class Store:
         return self.get_profile()
 
     def start_run(self, source: str, query: str, profile: SearchProfile, page_limit: int,
-                  watch_rule_id: int | None = None) -> int:
+                  watch_rule_id: int | None = None, provider: str = "saramin") -> int:
         with self.connect() as con:
             cur = con.execute(
-                """INSERT INTO crawl_runs(source,watch_rule_id,query,profile_snapshot,page_limit,started_at)
-                   VALUES (?,?,?,?,?,?)""",
+                """INSERT INTO crawl_runs(source,watch_rule_id,query,profile_snapshot,page_limit,started_at,provider)
+                   VALUES (?,?,?,?,?,?,?)""",
                 (source, watch_rule_id, query, json.dumps(profile.criteria(), ensure_ascii=False),
-                 page_limit, utc_now()),
+                  page_limit, utc_now(), provider),
             )
             return cur.lastrowid
 
@@ -310,12 +328,13 @@ class Store:
                          metrics.get("changed_count"), metrics.get("missing_count"),
                          metrics.get("closed_count"), run_id))
 
-    def comparable_run(self, query: str, profile: SearchProfile, pages: int) -> dict | None:
+    def comparable_run(self, query: str, profile: SearchProfile, pages: int,
+                       provider: str = "saramin") -> dict | None:
         snapshot = json.dumps(profile.criteria(), ensure_ascii=False)
         with self.connect() as con:
             rows = con.execute("""SELECT id,query,finished_at FROM crawl_runs
                 WHERE status='success' AND comparison_ready=1 AND profile_snapshot=?
-                  AND page_limit=? ORDER BY id DESC""", (snapshot, pages))
+                   AND page_limit=? AND provider=? ORDER BY id DESC""", (snapshot, pages, provider))
             return next((dict(row) for row in rows
                          if normalize_query(row["query"]) == normalize_query(query)), None)
 
@@ -352,8 +371,8 @@ class Store:
             existed = con.execute("SELECT detail_status FROM postings WHERE rec_idx=?", (posting.rec_idx,)).fetchone()
             con.execute("""INSERT INTO postings
                 (rec_idx,company,title,url,sector,career,education,conditions,deadline,
-                 posted_date,updated_date,deadline_date,full_text,detail_status,first_seen_at,last_seen_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 posted_date,updated_date,deadline_date,full_text,detail_status,first_seen_at,last_seen_at,provider)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(rec_idx) DO UPDATE SET
                   company=excluded.company,title=excluded.title,url=excluded.url,
                   sector=excluded.sector,career=excluded.career,education=excluded.education,
@@ -367,7 +386,7 @@ class Store:
                 (posting.rec_idx, posting.company, posting.title, posting.url, posting.sector,
                  posting.career, posting.education, posting.conditions, posting.deadline,
                  posting.posted_date, posting.updated_date, posting.deadline_date,
-                 "", "pending", stamp, stamp))
+                 "", "pending", stamp, stamp, posting.provider))
             run = con.execute("SELECT source FROM crawl_runs WHERE id=?", (run_id,)).fetchone()
             if run and run["source"] == "watch":
                 con.execute("""UPDATE postings SET
@@ -413,7 +432,7 @@ class Store:
                 raw = [raw]
             return list(dict.fromkeys(str(item) for item in raw if str(item).strip()))[:200]
 
-        for key in ("company", "career"):
+        for key in ("company", "career", "provider"):
             values = choices(key)
             if values:
                 clauses.append(f"p.{key} IN ({','.join('?' for _ in values)})")
@@ -535,19 +554,23 @@ class Store:
                 "SELECT DISTINCT query FROM crawl_runs ORDER BY query")]
             return result
 
-    def groups(self, kind: str) -> list[dict]:
+    def groups(self, kind: str, provider: str = "") -> list[dict]:
         with self.connect() as con:
             if kind == "tech":
-                sql = "SELECT keyword value,COUNT(DISTINCT posting_id) count FROM section_keywords GROUP BY keyword"
+                sql = """SELECT keyword value,COUNT(DISTINCT posting_id) count FROM section_keywords
+                         JOIN postings p ON p.rec_idx=posting_id"""
             elif kind == "sector":
-                sql = "SELECT keyword value,COUNT(*) count FROM posting_sector_keywords GROUP BY keyword"
+                sql = """SELECT keyword value,COUNT(*) count FROM posting_sector_keywords
+                         JOIN postings p ON p.rec_idx=posting_id"""
             elif kind == "date":
-                sql = "SELECT substr(last_seen_at,1,10) value,COUNT(*) count FROM postings GROUP BY value"
+                sql = "SELECT substr(p.last_seen_at,1,10) value,COUNT(*) count FROM postings p"
             elif kind in ("company", "career"):
-                sql = f"SELECT {kind} value,COUNT(*) count FROM postings GROUP BY {kind}"
+                sql = f"SELECT p.{kind} value,COUNT(*) count FROM postings p"
             else:
                 raise ValueError("지원하지 않는 분류입니다.")
-            return [dict(x) for x in con.execute(sql + " ORDER BY count DESC,value ASC LIMIT 100")]
+            where, args = self._where({"provider": provider})
+            return [dict(x) for x in con.execute(
+                sql + where + " GROUP BY value ORDER BY count DESC,value ASC LIMIT 100", args)]
 
     def analyze(self, kind: str, filters: dict | None = None, page: int = 1,
                 per_page: int = 40) -> dict:
@@ -560,7 +583,7 @@ class Store:
         with self.connect() as con:
             total = con.execute("SELECT COUNT(*) FROM postings p JOIN posting_sections s ON s.posting_id=p.rec_idx" + where, args).fetchone()[0]
             rows = [dict(x) for x in con.execute("""SELECT p.rec_idx,p.company,p.title,p.sector,p.career,
-                p.url,p.last_seen_at,s.text FROM postings p JOIN posting_sections s ON s.posting_id=p.rec_idx"""
+                p.provider,p.url,p.last_seen_at,s.text FROM postings p JOIN posting_sections s ON s.posting_id=p.rec_idx"""
                 + where + " ORDER BY p.last_seen_at DESC,p.rec_idx DESC LIMIT ? OFFSET ?",
                 [*args, per_page, (max(1, page) - 1) * per_page])]
             keywords = [dict(x) for x in con.execute("""SELECT sk.keyword,COUNT(DISTINCT sk.posting_id) count
@@ -573,17 +596,28 @@ class Store:
         with self.connect() as con:
             return [dict(x) for x in con.execute("SELECT * FROM crawl_runs ORDER BY id DESC LIMIT ?", (limit,))]
 
-    def add_watch(self, query: str, interval_minutes: int) -> int:
-        query, interval_minutes = validate_query(query), validate_interval(interval_minutes)
-        profile = self.get_profile()
+    def add_watch(self, query: str, interval_minutes: int, provider: str = "saramin") -> int:
+        added = self.add_watches(query, interval_minutes, (provider,))
+        if not added:
+            raise ValueError("이미 감시 중인 검색어입니다. 목록에서 기존 조건을 수정해 주세요.")
+        return added[0]
+
+    def add_watches(self, query: str, interval_minutes: int, providers: tuple[str, ...]) -> list[int]:
+        query = validate_query(query, 30 if "jobkorea" in providers else 40)
+        interval_minutes = validate_interval(interval_minutes)
+        keys = [(provider, watch_query_key(query, provider)) for provider in providers]
+        added = []
         with self.connect() as con:
-            if con.execute("SELECT 1 FROM watch_rules WHERE normalized_query=?",
-                           (normalize_query(query),)).fetchone():
-                raise ValueError("이미 감시 중인 검색어입니다. 목록에서 기존 조건을 수정해 주세요.")
-            cur = con.execute("""INSERT INTO watch_rules(query,normalized_query,interval_minutes,
-                profile_version,next_due_at) VALUES (?,?,?,?,?)""",
-                (query, normalize_query(query), interval_minutes, profile.version, utc_now()))
-            return cur.lastrowid
+            stamp = utc_now()
+            for provider, key in keys:
+                cur = con.execute("""INSERT INTO watch_rules(query,normalized_query,interval_minutes,
+                    profile_version,next_due_at,provider)
+                    SELECT ?,?,?,version,?,? FROM search_profiles WHERE id=1
+                    ON CONFLICT(normalized_query) DO NOTHING""",
+                    (query, key, interval_minutes, stamp, provider))
+                if cur.rowcount:
+                    added.append(cur.lastrowid)
+        return added
 
     def list_watches(self) -> list[dict]:
         with self.connect() as con:
@@ -595,29 +629,35 @@ class Store:
             return dict(row) if row else None
 
     def update_watch(self, rule_id: int, query: str, interval_minutes: int):
-        query, interval_minutes = validate_query(query), validate_interval(interval_minutes)
+        interval_minutes = validate_interval(interval_minutes)
         with self.connect() as con:
             old = con.execute("SELECT * FROM watch_rules WHERE id=?", (rule_id,)).fetchone()
             if not old:
                 raise ValueError("감시 조건을 찾을 수 없습니다.")
+            query = validate_query(query, 30 if old["provider"] == "jobkorea" else 40)
+            key = watch_query_key(query, old["provider"])
             if con.execute("SELECT 1 FROM watch_rules WHERE normalized_query=? AND id<>?",
-                           (normalize_query(query), rule_id)).fetchone():
+                           (key, rule_id)).fetchone():
                 raise ValueError("이미 감시 중인 검색어입니다.")
-            changed = normalize_query(query) != old["normalized_query"]
+            changed = key != old["normalized_query"]
             if changed:
                 con.execute("DELETE FROM watch_seen WHERE rule_id=?", (rule_id,))
             con.execute("""UPDATE watch_rules SET query=?,normalized_query=?,interval_minutes=?,
                 baseline_ready=?,generation=?,last_result=?,next_due_at=? WHERE id=?""",
-                (query, normalize_query(query), interval_minutes,
+                (query, key, interval_minutes,
                  0 if changed else old["baseline_ready"], old["generation"] + int(changed),
                  "첫 확인 대기" if changed else old["last_result"],
                  (utc_now() if changed else after_minutes(interval_minutes)) if old["enabled"] else None,
                  rule_id))
 
     def toggle_watch(self, rule_id: int, enabled: bool):
+        self.toggle_watches((rule_id,), enabled)
+
+    def toggle_watches(self, rule_ids: Iterable[int], enabled: bool):
+        due_at = utc_now() if enabled else None
         with self.connect() as con:
-            con.execute("UPDATE watch_rules SET enabled=?,next_due_at=? WHERE id=?",
-                        (int(enabled), utc_now() if enabled else None, rule_id))
+            con.executemany("UPDATE watch_rules SET enabled=?,next_due_at=? WHERE id=?",
+                            ((int(enabled), due_at, rule_id) for rule_id in rule_ids))
 
     def delete_watch(self, rule_id: int):
         with self.connect() as con:
@@ -660,7 +700,7 @@ class Store:
             if not new_alert_ids:
                 return []
             marks = ",".join("?" for _ in new_alert_ids)
-            return [dict(x) for x in con.execute(f"""SELECT a.*,p.company,p.title,p.url,p.favorite
+            return [dict(x) for x in con.execute(f"""SELECT a.*,p.company,p.title,p.url,p.favorite,p.provider
                 FROM alerts a JOIN postings p ON p.rec_idx=a.posting_id
                 WHERE a.id IN ({marks}) ORDER BY a.id DESC""", new_alert_ids)]
 
@@ -677,7 +717,7 @@ class Store:
 
     def alerts(self, limit: int = 100) -> list[dict]:
         with self.connect() as con:
-            return [dict(x) for x in con.execute("""SELECT a.*,p.company,p.title,p.url,p.favorite
+            return [dict(x) for x in con.execute("""SELECT a.*,p.company,p.title,p.url,p.favorite,p.provider
                 FROM alerts a JOIN postings p ON p.rec_idx=a.posting_id
                 ORDER BY a.id DESC LIMIT ?""", (limit,))]
 

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal
-rem 사람인 공고 관리 PC 앱을 준비하고 바탕화면 바로가기를 만든 뒤 실행한다.
+rem Job Finder PC 앱을 준비하고 바탕화면 바로가기를 만든 뒤 실행한다.
 set "APP_HOME=%~dp0desktop\dist\SaraminFinder"
 
 set "PY="
@@ -45,7 +45,7 @@ if errorlevel 1 (
 )
 
 echo [2/3] 바탕화면 바로가기를 만듭니다.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$d = $env:APP_HOME; $s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) '사람인 공고 관리.lnk')); $s.TargetPath = (Join-Path $d 'runtime\pythonw.exe'); $s.Arguments = '-m saramin_finder.main'; $s.WorkingDirectory = $d; $s.IconLocation = \"$env:SystemRoot\System32\shell32.dll,22\"; $s.Description = '사람인 공고 관리'; $s.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$d = $env:APP_HOME; $s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Job Finder.lnk')); $s.TargetPath = (Join-Path $d 'runtime\pythonw.exe'); $s.Arguments = '-m saramin_finder.main'; $s.WorkingDirectory = $d; $s.IconLocation = \"$env:SystemRoot\System32\shell32.dll,22\"; $s.Description = 'Job Finder'; $s.Save()"
 if errorlevel 1 (
   echo 바로가기를 만들지 못했습니다. desktop\dist\SaraminFinder\실행.bat 로 실행할 수 있습니다.
   pause
@@ -53,6 +53,6 @@ if errorlevel 1 (
 
 echo [3/3] 앱을 실행합니다.
 start "" "%APP_HOME%\runtime\pythonw.exe" -m saramin_finder.main
-echo 완료되었습니다. 다음부터는 바탕화면의 "사람인 공고 관리"를 더블클릭하세요.
+echo 완료되었습니다. 다음부터는 바탕화면의 "Job Finder"를 더블클릭하세요.
 timeout /t 5 >nul
 exit /b 0

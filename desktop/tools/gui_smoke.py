@@ -99,9 +99,17 @@ def main():
         store.finish_watch(rule, [])
         store.finish_watch(rule, ["999031", "999032", "999033"])
         store.toggle_watch(rule, False)
+        jobkorea_run = store.start_run("manual", "AI", store.get_profile(), 1, provider="jobkorea")
+        store.save_posting(Posting("jobkorea:999031", "잡코리아 검증회사", "AI 분석 개발자",
+            "https://www.jobkorea.co.kr/Recruit/GI_Read/999031", "AI·데이터",
+            provider="jobkorea"), Detail(status="complete", sections={"qualification": "Python 개발"},
+            section_status={"qualification": "extracted"}), jobkorea_run)
     if view == "watch" and not store.list_watches():
         rule = store.add_watch("AI", 60)
         store.toggle_watch(rule, False)
+    if view == "watch_start":
+        store.add_watches("AI", 60, ("saramin", "jobkorea"))
+        watch_ids = {rule["id"] for rule in store.list_watches()}
     initial_runs = len(store.recent_runs())
     window = AppWindow(store)
     notices = []
@@ -111,8 +119,9 @@ def main():
     if view in ("crawl_apply", "watch_start"):
         class EmptyClient:
             def search(self, _query, _profile, _page):
-                return [], 0
-        window.bridge.collector.client_factory = EmptyClient
+                return [], False
+        for collector in window.bridge.collectors.values():
+            collector.client_factory = EmptyClient
     print("tray", QSystemTrayIcon.isSystemTrayAvailable(), QSystemTrayIcon.supportsMessages(), flush=True)
     window.show()
     exit_code = {"value": 1}
@@ -230,6 +239,14 @@ def main():
                             }
                           }
                         }
+                        go('watch');
+                        const allQuery='전체 감시 검증 '+Date.now();
+                        document.getElementById('watchProvider').value='all';
+                        document.getElementById('watchQuery').value=allQuery;
+                        await saveWatch(new Event('submit'));
+                        const addedWatches=(await call('watches')).filter(rule=>rule.query===allQuery);
+                        check(addedWatches.map(rule=>rule.provider).sort().join(',')==='jobkorea,saramin','all-source watch registration');
+                        for(const rule of addedWatches) await call('delete_watch',{id:rule.id});
                         applyFontPercent(100);document.querySelector('#sideNav [data-view="alerts"]').click();await pause();await renderWatches();
                         check(activeView==='alerts' && !document.getElementById('view-alerts').hidden && document.getElementById('crumbName').textContent==='새 공고','new postings navigation');
                         const alertStar=document.querySelector('#alertList [data-favorite]');const alertId=alertStar.dataset.favorite,wasFavorite=alertStar.getAttribute('aria-pressed');
@@ -248,9 +265,17 @@ def main():
                         document.getElementById('closeDetail').click();
                         const star=document.querySelector('#exploreRows [data-favorite="999031"]');const old=star.getAttribute('aria-pressed');await toggleFavorite(star);check(star.getAttribute('aria-pressed')!==old,'favorite not changed');await toggleFavorite(star);
                         go('favorites');await renderFavorites();check(document.querySelectorAll('#favoriteRows tr').length===1,'favorites not retained');
+                        go('explore');document.getElementById('exploreProvider').value='jobkorea';await renderExplore();
+                        check(document.querySelectorAll('#exploreRows tr').length===1 && document.querySelector('#exploreRows [data-detail]').dataset.detail==='jobkorea:999031','archive provider filter');
+                        await openDetail('jobkorea:999031');
+                        check(document.getElementById('detailSubtitle').textContent.includes('잡코리아 · 공고 ID 999031'),'detail provider or original ID missing');
+                        document.getElementById('closeDetail').click();
+                        go('analysis');document.getElementById('analysisProvider').value='jobkorea';await renderAnalysis();
+                        check(document.getElementById('analysisCount').textContent==='1' && document.getElementById('analysisRows').textContent.includes('잡코리아'),'analysis provider filter');
+                        document.getElementById('analysisClearFilters').click();
                         go('explore');document.getElementById('searchInput').value='검색결과없음';await renderExplore();check(!document.getElementById('exploreEmpty').hidden,'empty state missing');
                         document.getElementById('clearFilters').click();await pause();
-                        const exportButton=document.getElementById('exportPostings');exportButton.click();await wait(exportButton);check(document.getElementById('toast').textContent.includes('3건'),'CSV failed');
+                        const exportButton=document.getElementById('exportPostings');exportButton.click();await wait(exportButton);check(document.getElementById('toast').textContent.includes('4건'),'CSV failed');
                         const before=document.getElementById('sidebar').classList.contains('collapsed');toggle.click();await wait(toggle);check(document.getElementById('sidebar').classList.contains('collapsed')!==before,'collapse failed');toggle.click();await wait(toggle);check(document.getElementById('sidebar').classList.contains('collapsed')===before,'expand failed');
                         const themeButton=document.getElementById('toggleTheme');themeButton.click();await wait(themeButton);check(document.body.dataset.theme==='light','top theme switch failed');themeButton.click();await wait(themeButton);check(document.body.dataset.theme==='dark','top theme switch failed');
                         window.__workbenchBatch={ok:true,width:innerWidth};
@@ -379,6 +404,8 @@ def main():
                 QTimer.singleShot(1500, read_state)
             elif view == "crawl_apply":
                 window.page().runJavaScript("""
+                  document.getElementById('crawlProvider').value='jobkorea';
+                  document.getElementById('crawlProvider').dispatchEvent(new Event('change'));
                   document.getElementById('crawlQuery').value='데이터';
                   document.getElementById('pageCount').value='1';
                   document.querySelectorAll('#crawlRegions [data-region-code]').forEach(x=>x.checked=x.dataset.regionCode==='102000');
@@ -389,7 +416,7 @@ def main():
                 """)
                 QTimer.singleShot(1500, read_state)
             elif view == "watch_start":
-                window.page().runJavaScript("document.querySelector('[data-watch-action=\"start\"]').click()")
+                window.page().runJavaScript("document.getElementById('startAllWatches').click()")
                 QTimer.singleShot(1500, read_state)
             elif view == "filters":
                 window.page().runJavaScript("""
@@ -474,6 +501,7 @@ def main():
             latest = store.recent_runs(1)
             criteria = json_module.loads(latest[0]["profile_snapshot"]) if latest else {}
             apply_ok = (bool(latest) and latest[0]["query"] == "데이터" and
+                        latest[0]["provider"] == "jobkorea" and
                         latest[0]["status"] == "success" and
                         criteria.get("location_codes") == ["102000"] and
                         criteria.get("experience_codes") == ["2"] and
@@ -484,10 +512,12 @@ def main():
                         value.get("crawlState") == "수집 완료" and
                         "상세 실패" in value.get("popupText", ""))
         elif view == "watch_start":
-            latest = store.recent_runs(1)
-            apply_ok = (bool(latest) and latest[0]["source"] == "watch" and
-                        latest[0]["status"] == "success" and len(notices) == 1 and
-                        "감시 중" in value.get("watchItemsText", "") and
+            latest = store.recent_runs(len(watch_ids))
+            apply_ok = (len(notices) == len(watch_ids) and
+                        {run["watch_rule_id"] for run in latest} == watch_ids and
+                        all(run["source"] == "watch" and run["status"] == "success" for run in latest) and
+                        all(store.get_watch(rule_id)["baseline_ready"] for rule_id in watch_ids) and
+                        value.get("watchItemsText", "").count("감시 중") == len(watch_ids) and
                         "상세 실패" in value.get("popupText", ""))
         elif view in ("crawl", "watch"):
             apply_ok = (len(store.recent_runs()) == initial_runs and len(notices) == 0 and
@@ -533,7 +563,9 @@ def main():
                 import csv
                 with (root / "workbench-export.csv").open(encoding="utf-8-sig", newline="") as stream:
                     rows = list(csv.DictReader(stream))
-                ui_ok = ui_ok and len(rows) == 3 and rows[0]["공고 ID"] in {"999031", "999032", "999033"}
+                ui_ok = ui_ok and len(rows) == 4 and {
+                    (row["공고 ID"], row["출처"]) for row in rows
+                } == {("999031", "사람인"), ("999032", "사람인"), ("999033", "사람인"), ("999031", "잡코리아")}
         print("profileSaved", profile_ok, flush=True)
         print("manualCriteriaApplied", apply_ok, flush=True)
         print("dateUiReady", ui_ok, flush=True)

@@ -263,7 +263,7 @@ def test_collector_persists_and_watch_uses_registration_sort(tmp_path):
     class FakeClient:
         def search(self, query, profile, page):
             profiles.append(profile)
-            return [sample_post()], 1
+            return [sample_post()], False
 
         def detail(self, rec_idx):
             return sample_detail()
@@ -286,7 +286,7 @@ def test_manual_criteria_are_used_and_snapshotted_without_changing_watch(tmp_pat
     class FakeClient:
         def search(self, _query, profile, _page):
             used.append(profile)
-            return [sample_post()], 1
+            return [sample_post()], False
 
         def detail(self, _rec_idx):
             return sample_detail()
@@ -363,7 +363,7 @@ def test_collector_watch_baseline_then_new_post_and_history(tmp_path):
             jobs = [sample_post()]
             if calls["count"] > 1:
                 jobs.append(sample_post("456"))
-            return jobs, len(jobs)
+            return jobs, False
 
         def detail(self, _rec_idx):
             return sample_detail()
@@ -434,7 +434,7 @@ def test_upgrade_keeps_existing_custom_watch(tmp_path):
     assert {item["query"] for item in watches} == {"백엔드", "AI"}
     assert reopened.get_watch(custom)["interval_minutes"] == 120
     with sqlite3.connect(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_upgrade_corrects_old_education_code_and_resets_baseline(tmp_path):
@@ -481,7 +481,7 @@ def test_v3_database_adds_date_columns_without_losing_postings(tmp_path):
         row = con.execute("SELECT * FROM postings WHERE rec_idx='123'").fetchone()
         assert row["title"] == "AI 개발자" and row["posted_date"] == ""
         assert row["deadline_date"] == "" and row["last_seen_at"] == "old"
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_custom_profile_changes_request_and_resets_watch_safely(tmp_path):
@@ -517,7 +517,7 @@ def test_run_comparison_separates_discovery_registration_change_and_closure(tmp_
             else:
                 jobs = [sample_post("1"), sample_post("2"),
                         replace(sample_post("4"), posted_date=next_day)]
-            return jobs, len(jobs)
+            return jobs, False
 
         def detail(self, rec_idx):
             detail = sample_detail()
@@ -552,7 +552,7 @@ def test_failed_listing_cannot_claim_missing_or_closed(tmp_path):
         def search(self, _query, _profile, page):
             if page == 1:
                 phase["number"] += 1
-                return ([sample_post("1")], 1) if phase["number"] == 1 else ([sample_post("2")], 40)
+                return ([sample_post("1")], False) if phase["number"] == 1 else ([sample_post("2")], True)
             raise CrawlError("목록 차단")
 
         def detail(self, _rec_idx):
@@ -726,7 +726,7 @@ def test_theme_setting_defaults_and_persists_without_changing_archive(tmp_path):
     assert reopened.get_posting("123")["favorite"] == 1
     assert reopened.get_profile() == profile and reopened.list_watches() == watches
     with reopened.connect() as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 8
     for invalid in (None, True, 1, {}, "system", "LIGHT"):
         with pytest.raises(ValueError):
             reopened.set_theme(invalid)
@@ -735,6 +735,109 @@ def test_theme_setting_defaults_and_persists_without_changing_archive(tmp_path):
     with reopened.connect() as con:
         con.execute("UPDATE app_settings SET value='unknown' WHERE key='theme'")
     assert Store(path).get_theme() == "light"
+
+
+def test_jobkorea_migration_keeps_old_ids_and_separates_matching_queries(tmp_path):
+    path = tmp_path / "jobs.sqlite3"
+    store = Store(path)
+    saramin_watch = store.list_watches()[0]["id"]
+    saramin = sample_post("123")
+    detail = sample_detail()
+
+    class SaraminFixture:
+        def search(self, *_args):
+            return [saramin], False
+
+        def detail(self, _id):
+            return detail
+
+    saramin_first = Collector(store, SaraminFixture).run("AI", 1, saramin_watch)
+    store.set_favorite("123", True)
+    store.set_font_percent(130)
+    with store.connect() as con:
+        for table in ("postings", "crawl_runs", "watch_rules"):
+            con.execute(f"ALTER TABLE {table} DROP COLUMN provider")
+        con.execute("DELETE FROM schema_version WHERE version=8")
+        con.execute("PRAGMA user_version=7")
+
+    store = Store(path)
+    assert store.get_posting("123")["favorite"] == 1
+    assert store.get_font_percent() == 130
+    assert store.get_watch(saramin_watch)["baseline_ready"] == 1
+    jobkorea_watch = store.add_watch("AI", 60, "jobkorea")
+    with pytest.raises(ValueError):
+        store.add_watch("ai", 60, "jobkorea")
+
+    jobs = [replace(saramin, rec_idx="jobkorea:123", provider="jobkorea",
+                    url="https://www.jobkorea.co.kr/Recruit/GI_Read/123")]
+
+    class JobKoreaFixture(SaraminFixture):
+        def search(self, *_args):
+            return jobs, False
+
+    collector = Collector(store, JobKoreaFixture, provider="jobkorea")
+    first = collector.run("AI", 1, jobkorea_watch)
+    assert first.baseline_run_id is None and first.alerts == [] and first.new_count == 1
+    jobs.append(replace(jobs[0], rec_idx="jobkorea:456"))
+    second = collector.run("AI", 1, jobkorea_watch)
+    assert second.baseline_run_id == first.run_id
+    assert [alert["posting_id"] for alert in second.alerts] == ["jobkorea:456"]
+    assert collector.run("AI", 1, jobkorea_watch).alerts == []
+    saramin_again = Collector(store, SaraminFixture).run("AI", 1, saramin_watch)
+    assert saramin_again.baseline_run_id == saramin_first.run_id and saramin_again.alerts == []
+    assert store.get_posting("jobkorea:123")["favorite"] == 0
+    assert store.list_postings({"provider": "jobkorea"})["total"] == 2
+    assert store.analyze("qualification", {"provider": "jobkorea"})["total"] == 2
+    rows = list(export_posting_rows(store, {"provider": "jobkorea"}))
+    assert {row[2] for row in rows[1:]} == {"123", "456"}
+    assert all(row[-1] == "잡코리아" for row in rows[1:])
+
+
+def test_add_all_watch_providers_preserves_existing_rule(tmp_path):
+    store = Store(tmp_path / "watches.sqlite3")
+    providers = ("saramin", "jobkorea")
+    existing_id = store.list_watches()[0]["id"]
+    store.update_watch(existing_id, "AI", 90)
+    original = store.get_watch(existing_id)
+
+    added = store.add_watches(" ai ", 30, providers)
+    assert len(added) == 1 and store.get_watch(added[0])["provider"] == "jobkorea"
+    assert store.get_watch(added[0])["interval_minutes"] == 30
+    assert store.get_watch(existing_id) == original
+    assert store.add_watches("AI", 15, providers) == []
+
+    fresh = store.add_watches("데이터", 45, providers)
+    assert [store.get_watch(rule_id)["provider"] for rule_id in fresh] == list(providers)
+    assert all(store.get_watch(rule_id)["interval_minutes"] == 45 for rule_id in fresh)
+    before = store.list_watches()
+    with pytest.raises(ValueError, match="1~30자"):
+        store.add_watches("a" * 31, 45, providers)
+    assert store.list_watches() == before
+
+
+def test_start_all_watches_only_queues_stopped_rules(tmp_path):
+    pytest.importorskip("PySide6")
+    from PySide6.QtCore import QCoreApplication
+    from saramin_finder.ui.bridge import Bridge
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    store = Store(tmp_path / "bulk-watch.sqlite3")
+    active_id = store.list_watches()[0]["id"]
+    stopped_id = store.add_watch("AI", 60, "jobkorea")
+    store.toggle_watch(stopped_id, False)
+    bridge = Bridge(store)
+    bridge.timer.stop()
+    bridge.running = True
+
+    assert json.loads(bridge.request("start_watch", json.dumps({"id": active_id})))["ok"]
+    store.finish_watch(active_id, [])
+    active_rule = store.get_watch(active_id)
+    assert json.loads(bridge.request("start_all_watches", "{}"))["data"] == {"started": 1}
+    assert bridge.active_watches == {active_id, stopped_id}
+    assert store.get_watch(active_id) == active_rule
+    assert [rule["id"] for rule in store.due_watches()] == [stopped_id]
+    assert json.loads(bridge.request("start_all_watches", "{}"))["data"] == {"started": 0}
+    assert app is not None
 
 
 def test_theme_bridge_settings_round_trip(tmp_path):

@@ -1,1 +1,1 @@
-"""Saramin Finder desktop application."""
+"""Job Finder desktop application."""

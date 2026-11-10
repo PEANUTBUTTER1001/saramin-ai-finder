@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from saramin_finder.domain.models import Detail, SearchProfile
+from saramin_finder.domain.models import PROVIDERS, Detail, SearchProfile
 from saramin_finder.domain.rules import validate_profile, validate_query
 from saramin_finder.infrastructure.database import Store
 from saramin_finder.infrastructure.saramin import CrawlError, SaraminClient
@@ -31,10 +31,11 @@ class CollectResult:
     missing_count: int | None = None
     closed_count: int | None = None
     error: str = ""
+    provider: str = "saramin"
 
     def summary(self) -> dict[str, str]:
         status_label = {"success": "완료", "partial": "일부 완료", "failed": "실패"}[self.status]
-        title = f"{self.query} · {'감시 확인' if self.source == 'watch' else '수집'} {status_label}"
+        title = f"{PROVIDERS[self.provider]} · {self.query} · {'감시 확인' if self.source == 'watch' else '수집'} {status_label}"
         if self.status == "failed":
             message = f"목록 확인 실패 · {self.error or '오류 내용을 확인해 주세요.'}"
         elif self.discovered_count is None:
@@ -64,14 +65,15 @@ def changed(before: dict, after: dict, detail_ok: bool) -> bool:
 
 
 class Collector:
-    def __init__(self, store: Store, client_factory=SaraminClient):
+    def __init__(self, store: Store, client_factory=SaraminClient, provider: str = "saramin"):
         self.store = store
         self.client_factory = client_factory
+        self.provider = provider
 
     def run(self, query: str, pages: int = 10, watch_rule_id: int | None = None,
             progress: Progress | None = None,
             profile_override: SearchProfile | None = None) -> CollectResult:
-        query = validate_query(query)
+        query = validate_query(query, 30 if self.provider == "jobkorea" else 40)
         if pages not in (1, 3, 10):
             raise ValueError("조회 페이지는 1, 3, 10 중 선택해 주세요.")
         profile = self.store.get_profile()
@@ -83,27 +85,27 @@ class Collector:
         watch_generation = None
         if watch_rule_id is not None:
             rule = self.store.get_watch(watch_rule_id)
-            if not rule or not rule["enabled"] or rule["query"] != query:
+            if not rule or not rule["enabled"] or rule["query"] != query or rule["provider"] != self.provider:
                 raise ValueError("감시 조건이 변경되었거나 일시정지되었습니다.")
             watch_generation = rule["generation"]
             # Verified on the current search page: recruitSort=reg_dt selects registration order.
             profile = replace(profile, sort="reg_dt")
-        baseline = self.store.comparable_run(query, profile, pages)
+        baseline = self.store.comparable_run(query, profile, pages, self.provider)
         previous = self.store.run_snapshots(baseline["id"]) if baseline else {}
-        run_id = self.store.start_run(source, query, profile, pages, watch_rule_id)
-        result = CollectResult(run_id, query=query, source=source,
+        run_id = self.store.start_run(source, query, profile, pages, watch_rule_id, self.provider)
+        result = CollectResult(run_id, query=query, source=source, provider=self.provider,
                                baseline_run_id=baseline["id"] if baseline else None)
-        client = self.client_factory()
         seen = set()
         complete_listing = True
         events: dict[str, set[str]] = {kind: set() for kind in
                                        ("discovered", "registered", "changed", "missing", "closed")}
         try:
+            client = self.client_factory()
             for page in range(1, pages + 1):
                 if progress:
                     progress({"stage": "list", "page": page, "pages": pages,
                               "message": f"검색 목록 {page}/{pages}페이지 확인 중"})
-                postings, raw_count = client.search(query, profile, page)
+                postings, has_more = client.search(query, profile, page)
                 for posting in postings:
                     if posting.rec_idx in seen:
                         continue
@@ -131,7 +133,7 @@ class Collector:
                         elif changed(previous[posting.rec_idx],
                                      {"values": current, "detail_ok": detail_ok}, detail_ok):
                             events["changed"].add(posting.rec_idx)
-                if raw_count < 40:
+                if not has_more:
                     break
         except CrawlError as exc:
             result.error = str(exc)

@@ -102,10 +102,10 @@ def sector_keywords(sector: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(part.strip() for part in sector.split(",") if part.strip()))
 
 
-def validate_query(query: str) -> str:
+def validate_query(query: str, max_length: int = 40) -> str:
     result = " ".join(query.split())
-    if not result or len(result) > 40:
-        raise ValueError("검색어는 1~40자로 입력해 주세요.")
+    if not result or len(result) > max_length:
+        raise ValueError(f"검색어는 1~{max_length}자로 입력해 주세요.")
     return result
 
 
